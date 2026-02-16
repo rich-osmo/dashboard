@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+venv/
+
+# Build output
+dist/
+dist-ssr/
+
+# Environment & secrets
+.env
+.google_token.json
+
+# Database
+*.db
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Vite
+.vite/
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.sw?
+
+# Logs
+*.log
+
+# Test artifacts
+test-results/
+playwright-report/
+
+
+app/backend/venv/
+app/backend/.env
+app/backend/.google_token.json
+app/backend/__pycache__/
+app/backend/**/__pycache__/
+app/database/rich.db
+app/frontend/node_modules/
+app/frontend/dist/

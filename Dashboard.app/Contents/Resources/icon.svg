@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Apple-style squircle background, inset to ~832px centered -->
+  <rect x="96" y="96" width="832" height="832" rx="186" ry="186" fill="#fffff8" stroke="#d8d4c8" stroke-width="4"/>
+
+  <!-- Single clean sparkline -->
+  <polyline
+    points="240,620 320,570 400,590 480,500 560,520 640,430 720,380 784,340"
+    fill="none"
+    stroke="#a00000"
+    stroke-width="8"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- End dot -->
+  <circle cx="784" cy="340" r="12" fill="#a00000"/>
+</svg>

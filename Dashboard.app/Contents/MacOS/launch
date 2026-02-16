@@ -1,0 +1,4 @@
+#!/bin/bash
+PYTHON="/Users/rich/osmo/rich/app/backend/venv/bin/python"
+cd "/Users/rich/osmo/rich/app/backend"
+exec /usr/bin/arch -arm64 "$PYTHON" launch.py 2>/tmp/dashboard-error.log
