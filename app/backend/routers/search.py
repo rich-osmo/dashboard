@@ -1,7 +1,9 @@
 """Unified search endpoint combining FTS5 local search with optional external service queries."""
+
 import asyncio
-import traceback
+
 from fastapi import APIRouter, Query
+
 from database import get_db
 
 router = APIRouter(prefix="/api/search", tags=["search"])
@@ -175,6 +177,7 @@ def _search_one_on_one(db, fts_query: str, limit: int) -> list[dict]:
 
 # --- External search wrappers ---
 
+
 async def _search_external(q: str, limit: int) -> dict:
     """Search external services concurrently. Each failure is isolated."""
     loop = asyncio.get_event_loop()
@@ -182,6 +185,7 @@ async def _search_external(q: str, limit: int) -> dict:
     async def _gmail():
         try:
             from routers.gmail import search_gmail
+
             result = await loop.run_in_executor(None, lambda: search_gmail(q=q, max_results=limit))
             return {
                 "items": [
@@ -201,6 +205,7 @@ async def _search_external(q: str, limit: int) -> dict:
     async def _calendar():
         try:
             from routers.calendar_api import search_calendar
+
             result = await loop.run_in_executor(None, lambda: search_calendar(q=q))
             return {
                 "items": [
@@ -220,6 +225,7 @@ async def _search_external(q: str, limit: int) -> dict:
     async def _slack():
         try:
             from routers.slack_api import search_slack
+
             result = await loop.run_in_executor(None, lambda: search_slack(q=q, count=limit))
             return {
                 "items": [
@@ -239,6 +245,7 @@ async def _search_external(q: str, limit: int) -> dict:
     async def _notion():
         try:
             from routers.notion_api import search_notion
+
             result = await loop.run_in_executor(None, lambda: search_notion(q=q, page_size=limit))
             return {
                 "items": [
@@ -256,12 +263,13 @@ async def _search_external(q: str, limit: int) -> dict:
     async def _github():
         try:
             from routers.github_api import search_github
+
             result = await loop.run_in_executor(None, lambda: search_github(q=q, per_page=limit))
             return {
                 "items": [
                     {
                         "id": str(item["number"]),
-                        "title": f'#{item["number"]} {item["title"]}',
+                        "title": f"#{item['number']} {item['title']}",
                         "subtitle": item.get("author", ""),
                         "url": item.get("html_url", ""),
                         "date": item.get("updated_at", ""),
@@ -272,9 +280,7 @@ async def _search_external(q: str, limit: int) -> dict:
         except Exception as e:
             return {"items": [], "error": str(e)}
 
-    gmail, calendar, slack, notion, github = await asyncio.gather(
-        _gmail(), _calendar(), _slack(), _notion(), _github()
-    )
+    gmail, calendar, slack, notion, github = await asyncio.gather(_gmail(), _calendar(), _slack(), _notion(), _github())
 
     return {
         "gmail": gmail,

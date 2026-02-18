@@ -20,6 +20,7 @@ export const SHORTCUT_DEFINITIONS: ShortcutDef[] = [
   { keys: 'g p', description: 'Go to Team', category: 'navigation' },
   { keys: 'g h', description: 'Go to GitHub', category: 'navigation' },
   { keys: 'g c', description: 'Go to Claude', category: 'navigation' },
+  { keys: 'g x', description: 'Go to Ramp (expenses)', category: 'navigation' },
   { keys: 'g s', description: 'Go to Settings', category: 'navigation' },
 
   // Actions
@@ -34,7 +35,9 @@ export const SHORTCUT_DEFINITIONS: ShortcutDef[] = [
   { keys: 'Shift+Tab / k / \u2191', description: 'Previous item in list', category: 'focus' },
   { keys: 'Enter', description: 'Open focused item', category: 'focus' },
   { keys: 'd', description: 'Dismiss focused item', category: 'focus' },
+  { keys: 'e', description: 'Expand / collapse item', category: 'focus' },
   { keys: 'i', description: 'Create issue from item', category: 'focus' },
+  { keys: 'f', description: 'Toggle score filter (all / filtered)', category: 'focus' },
 
   // Issues (on Issues page)
   { keys: 'j / \u2193', description: 'Next issue', category: 'issues' },
@@ -66,6 +69,7 @@ const GO_ROUTES: Record<string, string> = {
   p: '/team',
   h: '/github',
   c: '/claude',
+  x: '/ramp',
   s: '/settings',
 };
 

@@ -1,9 +1,10 @@
 """Parse Granola cache and sync meetings to SQLite."""
+
 import json
-from pathlib import Path
+
 from config import GRANOLA_CACHE_PATH
+from connectors.prosemirror import pm_to_html, pm_to_text
 from database import get_db
-from connectors.prosemirror import pm_to_text, pm_to_html
 from utils.employee_matching import match_attendees_to_employee
 
 
@@ -33,10 +34,12 @@ def parse_granola_cache() -> list[dict]:
         attendees = []
         people = doc.get("people") or {}
         for a in people.get("attendees", []):
-            attendees.append({
-                "name": a.get("name", ""),
-                "email": a.get("email", a.get("name", "")),
-            })
+            attendees.append(
+                {
+                    "name": a.get("name", ""),
+                    "email": a.get("email", a.get("name", "")),
+                }
+            )
 
         # Extract panel content (summary)
         panel_html = ""
@@ -68,21 +71,23 @@ def parse_granola_cache() -> list[dict]:
         # Build Granola link
         granola_link = f"https://notes.granola.ai/d/{doc_id}"
 
-        meetings.append({
-            "id": doc_id,
-            "title": doc.get("title", ""),
-            "created_at": doc.get("created_at", ""),
-            "updated_at": doc.get("updated_at", ""),
-            "calendar_event_id": cal_event_id,
-            "calendar_event_summary": cal_event_summary,
-            "attendees_json": json.dumps(attendees),
-            "panel_summary_html": panel_html,
-            "panel_summary_plain": panel_text,
-            "transcript_text": transcript_text[:10000] if transcript_text else "",
-            "granola_link": granola_link,
-            "employee_id": employee_id,
-            "valid_meeting": 1,
-        })
+        meetings.append(
+            {
+                "id": doc_id,
+                "title": doc.get("title", ""),
+                "created_at": doc.get("created_at", ""),
+                "updated_at": doc.get("updated_at", ""),
+                "calendar_event_id": cal_event_id,
+                "calendar_event_summary": cal_event_summary,
+                "attendees_json": json.dumps(attendees),
+                "panel_summary_html": panel_html,
+                "panel_summary_plain": panel_text,
+                "transcript_text": transcript_text[:10000] if transcript_text else "",
+                "granola_link": granola_link,
+                "employee_id": employee_id,
+                "valid_meeting": 1,
+            }
+        )
 
     return meetings
 
@@ -104,10 +109,18 @@ def sync_granola_meetings() -> int:
                 granola_link, employee_id, valid_meeting)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                m["id"], m["title"], m["created_at"], m["updated_at"],
-                m["calendar_event_id"], m["calendar_event_summary"],
-                m["attendees_json"], m["panel_summary_html"], m["panel_summary_plain"],
-                m["transcript_text"], m["granola_link"], m["employee_id"],
+                m["id"],
+                m["title"],
+                m["created_at"],
+                m["updated_at"],
+                m["calendar_event_id"],
+                m["calendar_event_summary"],
+                m["attendees_json"],
+                m["panel_summary_html"],
+                m["panel_summary_plain"],
+                m["transcript_text"],
+                m["granola_link"],
+                m["employee_id"],
                 m["valid_meeting"],
             ),
         )

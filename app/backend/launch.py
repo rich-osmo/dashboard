@@ -1,6 +1,8 @@
 """Launch the dashboard as a native Mac app with pywebview."""
+
 import threading
 import time
+
 import uvicorn
 import webview
 
@@ -16,6 +18,7 @@ if __name__ == "__main__":
 
     # Wait for the server to be ready
     import urllib.request
+
     for _ in range(30):
         try:
             urllib.request.urlopen("http://127.0.0.1:8000/api/health")

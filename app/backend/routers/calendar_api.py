@@ -1,9 +1,11 @@
 """Live Google Calendar API endpoints for searching and reading events."""
-import json
+
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
+
+from fastapi import APIRouter, HTTPException, Query
 from googleapiclient.discovery import build
+
 from connectors.google_auth import get_google_credentials
 
 router = APIRouter(prefix="/api/calendar", tags=["calendar"])
@@ -23,12 +25,14 @@ def _event_to_dict(event: dict) -> dict:
 
     attendees = []
     for a in event.get("attendees", []):
-        attendees.append({
-            "email": a.get("email", ""),
-            "name": a.get("displayName", ""),
-            "response": a.get("responseStatus", ""),
-            "self": a.get("self", False),
-        })
+        attendees.append(
+            {
+                "email": a.get("email", ""),
+                "name": a.get("displayName", ""),
+                "response": a.get("responseStatus", ""),
+                "self": a.get("self", False),
+            }
+        )
 
     return {
         "id": event["id"],

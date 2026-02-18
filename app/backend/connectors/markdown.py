@@ -1,9 +1,14 @@
 import re
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 
-def parse_org_tree(teams_dir: Path, manager_id: str | None = None, depth: int = 0, is_executive: bool = False) -> list[dict]:
+def parse_org_tree(
+    teams_dir: Path,
+    manager_id: str | None = None,
+    depth: int = 0,
+    is_executive: bool = False,
+) -> list[dict]:
     employees = []
     if not teams_dir.exists():
         return employees
@@ -17,16 +22,18 @@ def parse_org_tree(teams_dir: Path, manager_id: str | None = None, depth: int = 
         role_data = parse_role_md(entry / "role.md")
         has_meetings = (entry / "meetings").is_dir()
 
-        employees.append({
-            "id": employee_id,
-            "name": name,
-            "title": role_data.get("title", ""),
-            "reports_to": manager_id,
-            "depth": depth,
-            "dir_path": str(entry),
-            "has_meetings_dir": has_meetings,
-            "is_executive": is_executive,
-        })
+        employees.append(
+            {
+                "id": employee_id,
+                "name": name,
+                "title": role_data.get("title", ""),
+                "reports_to": manager_id,
+                "depth": depth,
+                "dir_path": str(entry),
+                "has_meetings_dir": has_meetings,
+                "is_executive": is_executive,
+            }
+        )
 
         sub_teams = entry / "teams"
         if sub_teams.is_dir():
@@ -73,23 +80,30 @@ def parse_meeting_files(meetings_dir: Path, employee_id: str) -> list[dict]:
         if summary_match:
             summary = summary_match.group(1).strip()[:500]
 
-        meetings.append({
-            "employee_id": employee_id,
-            "filename": f.name,
-            "filepath": str(f),
-            "meeting_date": meeting_date,
-            "title": f"1:1 - {employee_id.replace('_', ' ')} - {meeting_date or 'Unknown'}",
-            "summary": summary,
-            "granola_link": granola_link,
-            "action_items": action_items,
-            "content_markdown": content,
-            "last_modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
-        })
+        meetings.append(
+            {
+                "employee_id": employee_id,
+                "filename": f.name,
+                "filepath": str(f),
+                "meeting_date": meeting_date,
+                "title": f"1:1 - {employee_id.replace('_', ' ')} - {meeting_date or 'Unknown'}",
+                "summary": summary,
+                "granola_link": granola_link,
+                "action_items": action_items,
+                "content_markdown": content,
+                "last_modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
+            }
+        )
 
     return meetings
 
 
-def get_employee_detail(employee_id: str, teams_dir: Path, hidden_dir: Path | None = None, executives_dir: Path | None = None) -> dict | None:
+def get_employee_detail(
+    employee_id: str,
+    teams_dir: Path,
+    hidden_dir: Path | None = None,
+    executives_dir: Path | None = None,
+) -> dict | None:
     """Find employee directory and return full detail including file contents."""
     emp_dir = _find_employee_dir(employee_id, teams_dir)
     if not emp_dir and hidden_dir:
@@ -110,11 +124,13 @@ def get_employee_detail(employee_id: str, teams_dir: Path, hidden_dir: Path | No
         for entry in sorted(sub_teams.iterdir()):
             if entry.is_dir() and not entry.name.startswith("."):
                 dr_role = parse_role_md(entry / "role.md")
-                direct_reports.append({
-                    "id": entry.name,
-                    "name": entry.name.replace("_", " "),
-                    "title": dr_role.get("title", ""),
-                })
+                direct_reports.append(
+                    {
+                        "id": entry.name,
+                        "name": entry.name.replace("_", " "),
+                        "title": dr_role.get("title", ""),
+                    }
+                )
 
     return {
         "role_content": role_content or "",

@@ -1,10 +1,17 @@
 """Meetings API — unified view of calendar events + Granola meetings with personal notes."""
+
 from fastapi import APIRouter, HTTPException, Query
-from typing import Optional
+
 from database import get_db
 from models import MeetingNoteUpsert
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
+
+
+def _dismissed_meeting_ids(db) -> set[str]:
+    """Get set of dismissed meeting IDs from the dismissed_dashboard_items table."""
+    rows = db.execute("SELECT item_id FROM dismissed_dashboard_items WHERE source = 'meeting'").fetchall()
+    return {r["item_id"] for r in rows}
 
 
 def _row_to_meeting(row) -> dict:
@@ -47,9 +54,9 @@ def list_meetings(
             (limit, offset),
         ).fetchall()
 
-        total = db.execute(
-            "SELECT COUNT(*) as c FROM calendar_events WHERE start_time > datetime('now')"
-        ).fetchone()["c"]
+        total = db.execute("SELECT COUNT(*) as c FROM calendar_events WHERE start_time > datetime('now')").fetchone()[
+            "c"
+        ]
 
     else:  # past
         rows = db.execute(
@@ -112,9 +119,17 @@ def list_meetings(
         ).fetchone()["c"]
         total = total_cal + total_granola
 
+    # Filter out dismissed meetings
+    dismissed = _dismissed_meeting_ids(db)
     db.close()
 
-    meetings = [_row_to_meeting(r) for r in rows]
+    meetings = []
+    for r in rows:
+        # A meeting is identified by its event_id (calendar) or granola_id (Granola)
+        meeting_id = r["event_id"] or r["granola_id"]
+        if meeting_id and meeting_id not in dismissed:
+            meetings.append(_row_to_meeting(r))
+
     return {
         "meetings": meetings,
         "total": total,
@@ -190,9 +205,7 @@ def upsert_meeting_note(
 
     db.commit()
 
-    note = dict(
-        db.execute("SELECT * FROM meeting_notes WHERE id = ?", (note_id,)).fetchone()
-    )
+    note = dict(db.execute("SELECT * FROM meeting_notes WHERE id = ?", (note_id,)).fetchone())
     db.close()
     return note
 

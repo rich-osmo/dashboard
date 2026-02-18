@@ -1,13 +1,15 @@
 """Live Notion API endpoints for search and page reading."""
+
 import json
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
-from utils.notion_blocks import blocks_to_text
+
+from fastapi import APIRouter, HTTPException, Query
 
 from database import get_db
+from utils.notion_blocks import blocks_to_text
 
 router = APIRouter(prefix="/api/notion", tags=["notion"])
 
@@ -15,6 +17,7 @@ router = APIRouter(prefix="/api/notion", tags=["notion"])
 def _iso_cutoff(days: int) -> str:
     """Return ISO datetime string for N days ago."""
     return (datetime.utcnow() - timedelta(days=days)).isoformat()
+
 
 NOTION_API_BASE = "https://api.notion.com/v1"
 
@@ -81,15 +84,23 @@ def search_notion(
             if icon_obj.get("type") == "emoji":
                 icon = icon_obj.get("emoji", "")
 
-        results.append({
-            "id": item["id"],
-            "object": item.get("object", ""),
-            "title": _extract_title(item) if item.get("object") == "page" else item.get("title", [{}])[0].get("plain_text", "") if item.get("title") else "Untitled",
-            "url": item.get("url", ""),
-            "icon": icon,
-            "last_edited_time": item.get("last_edited_time", ""),
-            "created_time": item.get("created_time", ""),
-        })
+        results.append(
+            {
+                "id": item["id"],
+                "object": item.get("object", ""),
+                "title": (
+                    _extract_title(item)
+                    if item.get("object") == "page"
+                    else item.get("title", [{}])[0].get("plain_text", "")
+                    if item.get("title")
+                    else "Untitled"
+                ),
+                "url": item.get("url", ""),
+                "icon": icon,
+                "last_edited_time": item.get("last_edited_time", ""),
+                "created_time": item.get("created_time", ""),
+            }
+        )
 
     return {"query": q, "count": len(results), "results": results}
 
@@ -243,9 +254,7 @@ def _rank_notion_with_gemini(pages: list[dict]) -> list[dict]:
 
 
 def _dismissed_notion_ids(db) -> set[str]:
-    rows = db.execute(
-        "SELECT item_id FROM dismissed_dashboard_items WHERE source = 'notion'"
-    ).fetchall()
+    rows = db.execute("SELECT item_id FROM dismissed_dashboard_items WHERE source = 'notion'").fetchall()
     return {r["item_id"] for r in rows}
 
 
@@ -264,9 +273,9 @@ def get_prioritized_notion(refresh: bool = Query(False), days: int = Query(7, ge
         if cached:
             data = json.loads(cached["data_json"])
             data["items"] = [
-                item for item in data.get("items", [])
-                if item["id"] not in dismissed
-                and (item.get("last_edited_time") or "") >= _iso_cutoff(days)
+                item
+                for item in data.get("items", [])
+                if item["id"] not in dismissed and (item.get("last_edited_time") or "") >= _iso_cutoff(days)
             ]
             db.close()
             return data
@@ -313,17 +322,19 @@ def get_prioritized_notion(refresh: bool = Query(False), days: int = Query(7, ge
         page = page_lookup.get(page_id)
         if not page:
             continue
-        items.append({
-            "id": page["id"],
-            "title": page["title"],
-            "url": page["url"],
-            "last_edited_time": page["last_edited_time"],
-            "last_edited_by": page["last_edited_by"],
-            "snippet": page["snippet"],
-            "relevance_reason": page["relevance_reason"],
-            "priority_score": rank.get("priority_score", 5),
-            "priority_reason": rank.get("reason", ""),
-        })
+        items.append(
+            {
+                "id": page["id"],
+                "title": page["title"],
+                "url": page["url"],
+                "last_edited_time": page["last_edited_time"],
+                "last_edited_by": page["last_edited_by"],
+                "snippet": page["snippet"],
+                "relevance_reason": page["relevance_reason"],
+                "priority_score": rank.get("priority_score", 5),
+                "priority_reason": rank.get("reason", ""),
+            }
+        )
 
     # Sort by score desc, filter dismissed, take top 50
     items.sort(key=lambda x: x["priority_score"], reverse=True)

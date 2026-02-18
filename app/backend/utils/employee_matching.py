@@ -46,6 +46,7 @@ def build_employee_mapping(employees: list[dict]):
 def rebuild_from_db():
     """Rebuild employee matching maps from database."""
     from database import get_db
+
     db = get_db()
     rows = db.execute("SELECT id, name FROM employees").fetchall()
     db.close()

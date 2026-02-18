@@ -39,6 +39,11 @@ const SERVICE_INFO: Record<
     description: 'Pull requests and code search (osmoai/osmo)',
     setupHint: 'Install gh CLI and run: gh auth login',
   },
+  ramp: {
+    label: 'Ramp',
+    description: 'Corporate card transactions and expenses',
+    setupHint: 'Add RAMP_CLIENT_ID and RAMP_CLIENT_SECRET to .env',
+  },
 };
 
 function StatusBadge({ status }: { status: ServiceAuthStatus }) {

@@ -32,8 +32,8 @@ export function detectEmployees(
       /follow up with (\w[\w\s]*)/i,
       /ask (\w[\w\s]*?) about/i,
       /discuss with (\w[\w\s]*)/i,
-      /(\w[\w\s]*?)(?:'s)?\s+1[:\-]1/i,
-      /1[:\-]1 with (\w[\w\s]*)/i,
+      /(\w[\w\s]*?)(?:'s)?\s+1[:-]1/i,
+      /1[:-]1 with (\w[\w\s]*)/i,
       /bring up (?:with |to )(\w[\w\s]*)/i,
       /talk to (\w[\w\s]*)/i,
       /tell (\w[\w\s]*?) (?:about|to|that)/i,
@@ -57,6 +57,6 @@ export function detectEmployees(
     }
   }
 
-  const isOneOnOne = /1[:\-]1|follow.?up|bring.?up|discuss|talk to/i.test(text);
+  const isOneOnOne = /1[:-]1|follow.?up|bring.?up|discuss|talk to/i.test(text);
   return { employees: matched, isOneOnOne: matched.length > 0 && isOneOnOne };
 }

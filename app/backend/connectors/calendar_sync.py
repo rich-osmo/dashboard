@@ -1,10 +1,13 @@
 """Google Calendar API connector."""
+
 import json
 from datetime import datetime, timedelta, timezone
+
 from googleapiclient.discovery import build
+
+from config import CALENDAR_DAYS_AHEAD, CALENDAR_DAYS_BEHIND
 from connectors.google_auth import get_google_credentials
 from database import get_db
-from config import CALENDAR_DAYS_AHEAD, CALENDAR_DAYS_BEHIND
 
 
 def sync_calendar_events() -> int:
@@ -47,11 +50,13 @@ def sync_calendar_events() -> int:
 
         attendees = []
         for a in event.get("attendees", []):
-            attendees.append({
-                "email": a.get("email", ""),
-                "name": a.get("displayName", ""),
-                "response": a.get("responseStatus", ""),
-            })
+            attendees.append(
+                {
+                    "email": a.get("email", ""),
+                    "name": a.get("displayName", ""),
+                    "response": a.get("responseStatus", ""),
+                }
+            )
 
         db.execute(
             """INSERT OR REPLACE INTO calendar_events

@@ -1,0 +1,8 @@
+line-length = 120
+
+[lint]
+select = ["E", "F", "I"]
+
+[lint.per-file-ignores]
+"main.py" = ["E402"]  # imports after dotenv/SSL setup
+"connectors/slack.py" = ["F401"]  # try/except import for availability check

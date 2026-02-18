@@ -1,13 +1,16 @@
 """Notion REST API connector for recent page activity with LLM relevance scoring."""
+
 import json
 import logging
 import os
 from pathlib import Path
+
 from database import get_db
 from utils.notion_blocks import blocks_to_text
 
 try:
     import httpx
+
     HAS_HTTPX = True
 except ImportError:
     HAS_HTTPX = False
@@ -89,16 +92,14 @@ def _build_scoring_context(db) -> dict:
     open_notes = [
         dict(r)
         for r in db.execute(
-            "SELECT text, priority, is_one_on_one FROM notes "
-            "WHERE status = 'open' ORDER BY priority DESC LIMIT 15"
+            "SELECT text, priority, is_one_on_one FROM notes WHERE status = 'open' ORDER BY priority DESC LIMIT 15"
         ).fetchall()
     ]
 
     slack_recent = [
         dict(r)
         for r in db.execute(
-            "SELECT user_name, text, channel_name FROM slack_messages "
-            "ORDER BY ts DESC LIMIT 15"
+            "SELECT user_name, text, channel_name FROM slack_messages ORDER BY ts DESC LIMIT 15"
         ).fetchall()
     ]
 
@@ -148,9 +149,7 @@ No markdown, no explanation, just the JSON array."""
 SCORING_BATCH_SIZE = 75  # Pages per Gemini call to avoid output truncation
 
 
-def _score_batch_with_gemini(
-    genai_client, page_summaries: list[dict], context_str: str, now: str
-) -> list[dict]:
+def _score_batch_with_gemini(genai_client, page_summaries: list[dict], context_str: str, now: str) -> list[dict]:
     """Score a single batch of pages with Gemini."""
     user_message = (
         f"Current time: {now}\n\n"
@@ -198,6 +197,7 @@ def _score_with_gemini(pages: list[dict], context: dict) -> list[dict]:
         page_summaries.append(entry)
 
     from datetime import datetime
+
     now = datetime.now().strftime("%A, %B %d %Y, %I:%M %p")
     context_str = json.dumps(context, default=str)
 
@@ -263,9 +263,7 @@ def _extract_page_data(page: dict) -> dict:
         "last_edited_time": page.get("last_edited_time", ""),
         "last_edited_by": page.get("last_edited_by", {}).get("id", ""),
         "parent_type": page.get("parent", {}).get("type", ""),
-        "parent_id": page.get("parent", {}).get(
-            page.get("parent", {}).get("type", ""), ""
-        ),
+        "parent_id": page.get("parent", {}).get(page.get("parent", {}).get("type", ""), ""),
         "icon": icon,
         "snippet": "",
     }
@@ -337,10 +335,17 @@ def sync_notion_pages(limit: int = 500) -> int:
                 relevance_score, relevance_reason)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                p["id"], p["title"], p["url"], p["last_edited_time"],
-                p["last_edited_by"], p["parent_type"], p["parent_id"],
-                p["icon"], p["snippet"],
-                score, reason,
+                p["id"],
+                p["title"],
+                p["url"],
+                p["last_edited_time"],
+                p["last_edited_by"],
+                p["parent_type"],
+                p["parent_id"],
+                p["icon"],
+                p["snippet"],
+                score,
+                reason,
             ),
         )
 

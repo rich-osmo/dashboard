@@ -15,6 +15,7 @@ import type { Note, Issue } from '../api/types';
 import { detectEmployees } from '../utils/detectEmployees';
 import { parseIssuePrefix } from '../utils/parseIssuePrefix';
 import { useMentionAutocomplete } from '../hooks/useMentionAutocomplete';
+import { useFocusNavigation } from '../hooks/useFocusNavigation';
 
 function isThought(note: Note): boolean {
   return note.text.startsWith('[t]') || note.text.startsWith('[T]');
@@ -24,17 +25,35 @@ function NoteItem({
   note,
   onToggle,
   onDelete,
+  onUpdate,
   showEmployee = true,
 }: {
   note: Note;
   onToggle: () => void;
   onDelete: () => void;
+  onUpdate: (text: string) => void;
   showEmployee?: boolean;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [editText, setEditText] = useState(note.text);
+  const editRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) editRef.current?.focus();
+  }, [editing]);
+
+  const saveEdit = () => {
+    const trimmed = editText.trim();
+    if (trimmed && trimmed !== note.text) {
+      onUpdate(trimmed);
+    }
+    setEditing(false);
+  };
+
   return (
     <div
       id={`note-${note.id}`}
-      className={`note-item ${note.status === 'done' ? 'done' : ''} ${
+      className={`note-item dashboard-item-row ${note.status === 'done' ? 'done' : ''} ${
         note.priority >= 3 ? 'priority-high' : note.priority === 2 ? 'priority-medium' : ''
       }`}
     >
@@ -44,7 +63,24 @@ function NoteItem({
         onChange={onToggle}
       />
       <div className="note-text">
-        <div>{note.text}</div>
+        {editing ? (
+          <input
+            ref={editRef}
+            className="note-input"
+            value={editText}
+            onChange={(e) => setEditText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); saveEdit(); }
+              if (e.key === 'Escape') { setEditText(note.text); setEditing(false); }
+            }}
+            onBlur={saveEdit}
+            style={{ width: '100%', fontSize: 'inherit', padding: '2px 4px' }}
+          />
+        ) : (
+          <div onDoubleClick={() => { setEditText(note.text); setEditing(true); }} style={{ cursor: 'text' }}>
+            {note.text}
+          </div>
+        )}
         <div className="note-meta">
           {showEmployee && note.employees?.length > 0 && (
             <>
@@ -189,6 +225,48 @@ export function NotePage() {
     return items;
   }, [notes, issues]);
 
+  // Keyboard navigation for thoughts section
+  const { containerRef: thoughtsContainerRef } = useFocusNavigation({
+    selector: '.dashboard-item-row',
+    onDismiss: (i) => {
+      if (thoughts[i]) {
+        updateNote.mutate({
+          id: thoughts[i].id,
+          status: thoughts[i].status === 'done' ? 'open' : 'done',
+        });
+      }
+    },
+  });
+
+  // Keyboard navigation for all notes section
+  const { containerRef: allNotesContainerRef } = useFocusNavigation({
+    selector: '.dashboard-item-row',
+    onDismiss: (i) => {
+      if (allItems[i]) {
+        if (allItems[i].kind === 'note') {
+          updateNote.mutate({
+            id: allItems[i].item.id,
+            status: allItems[i].item.status === 'done' ? 'open' : 'done',
+          });
+        } else if (allItems[i].kind === 'issue') {
+          updateIssue.mutate({
+            id: allItems[i].item.id,
+            status: allItems[i].item.status === 'done' ? 'open' : 'done',
+          });
+        }
+      }
+    },
+    onCreateIssue: (i) => {
+      if (allItems[i] && allItems[i].kind === 'note') {
+        const note = allItems[i].item as Note;
+        createIssue.mutate({
+          title: note.text.slice(0, 120),
+          employee_ids: note.employees?.map((e) => e.id) || [],
+        });
+      }
+    },
+  });
+
   return (
     <div>
       <h1>Notes</h1>
@@ -258,25 +336,29 @@ export function NotePage() {
       {thoughts.length > 0 && (
         <div style={{ marginBottom: 'var(--space-xl)' }}>
           <h2>Thoughts</h2>
-          {thoughts.map((note) => (
-            <NoteItem
-              key={note.id}
-              note={note}
-              onToggle={() =>
-                updateNote.mutate({
-                  id: note.id,
-                  status: note.status === 'done' ? 'open' : 'done',
-                })
-              }
-              onDelete={() => deleteNote.mutate(note.id)}
-            />
-          ))}
+          <div ref={thoughtsContainerRef}>
+            {thoughts.map((note) => (
+              <NoteItem
+                key={note.id}
+                note={note}
+                onToggle={() =>
+                  updateNote.mutate({
+                    id: note.id,
+                    status: note.status === 'done' ? 'open' : 'done',
+                  })
+                }
+                onDelete={() => deleteNote.mutate(note.id)}
+                onUpdate={(text) => updateNote.mutate({ id: note.id, text })}
+              />
+            ))}
+          </div>
         </div>
       )}
 
       {/* All notes + issues */}
       <div>
         <h2>All Notes</h2>
+        <div ref={allNotesContainerRef}>
         {allItems.map((entry) => {
           if (entry.kind === 'note') {
             const note = entry.item;
@@ -291,6 +373,7 @@ export function NotePage() {
                   })
                 }
                 onDelete={() => deleteNote.mutate(note.id)}
+                onUpdate={(text) => updateNote.mutate({ id: note.id, text })}
               />
             );
           }
@@ -299,7 +382,7 @@ export function NotePage() {
             <div
               key={`issue-${issue.id}`}
               id={`issue-${issue.id}`}
-              className={`note-item ${issue.status === 'done' ? 'done' : ''} priority-p${issue.priority}`}
+              className={`note-item dashboard-item-row ${issue.status === 'done' ? 'done' : ''} priority-p${issue.priority}`}
             >
               <input
                 type="checkbox"
@@ -349,6 +432,7 @@ export function NotePage() {
             {statusFilter === 'open' ? 'All caught up.' : 'No notes found.'}
           </p>
         )}
+        </div>
       </div>
     </div>
   );

@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useMeetings, useUpsertMeetingNote, useDeleteMeetingNote } from '../api/hooks';
+import { useMeetings, useUpsertMeetingNote, useDeleteMeetingNote, useDismissPrioritizedItem } from '../api/hooks';
 import type { MeetingWithContext } from '../api/types';
+import { useFocusNavigation } from '../hooks/useFocusNavigation';
+import { KeyboardHints } from '../components/shared/KeyboardHints';
 
 function formatMeetingTime(startTime: string, endTime: string | null): string {
   const start = new Date(startTime);
@@ -261,7 +263,7 @@ function MeetingRow({
   };
 
   return (
-    <div className="meeting-entry">
+    <div className="meeting-entry dashboard-item-row">
       <div className="meeting-date">
         <span style={{ fontVariantNumeric: 'tabular-nums' }}>
           {formatMeetingDate(meeting.start_time)}
@@ -318,23 +320,14 @@ function MeetingRow({
           <button
             className="collapsible-header"
             onClick={() => setExpanded(!expanded)}
-            style={{
-              background: 'none',
-              border: 'none',
-              fontFamily: 'var(--font-body)',
-              fontSize: 'var(--text-sm)',
-              color: 'var(--color-accent)',
-              cursor: 'pointer',
-              padding: 'var(--space-xs) 0',
-            }}
           >
             <span className={`collapse-icon ${expanded ? 'open' : ''}`}>
               &#x25b6;
-            </span>{' '}
+            </span>
             {expanded ? 'Hide' : 'Show'} summary
           </button>
           {expanded && (
-            <div className="meeting-summary" style={{ marginTop: 'var(--space-xs)' }}>
+            <div className="meeting-summary">
               {meeting.granola_summary_html ? (
                 <div
                   className="markdown-content"
@@ -413,8 +406,7 @@ function MeetingRow({
       {/* Add note button (when no note exists) */}
       {!meeting.note_content && !editing && (
         <button
-          className="btn-link"
-          style={{ fontSize: 'var(--text-sm)', marginTop: 'var(--space-xs)' }}
+          className="btn-link meeting-add-note-btn"
           onClick={() => {
             setNoteText('');
             setEditing(true);
@@ -454,6 +446,43 @@ function MeetingList({ tab }: { tab: 'upcoming' | 'past' }) {
   const meetings = data?.pages.flatMap((p) => p.meetings) ?? [];
   const total = data?.pages[0]?.total ?? 0;
 
+  const dismissMeeting = useDismissPrioritizedItem();
+
+  // Keyboard navigation callbacks
+  const handleOpenAtIndex = (index: number) => {
+    if (meetings[index]) {
+      setSelectedMeeting(meetings[index]);
+    }
+  };
+
+  const handleExpandAtIndex = (index: number) => {
+    // Find the expand/collapse button in the focused meeting entry and click it
+    const entries = document.querySelectorAll('.dashboard-item-row');
+    const entry = entries[index];
+    if (entry) {
+      const expandBtn = entry.querySelector('.collapsible-header') as HTMLButtonElement;
+      expandBtn?.click();
+    }
+  };
+
+  const handleDismissAtIndex = (index: number) => {
+    if (meetings[index]) {
+      const meeting = meetings[index];
+      const meetingId = meeting.event_id || meeting.granola_id;
+      if (meetingId) {
+        dismissMeeting.mutate({ source: 'meeting', item_id: meetingId });
+      }
+    }
+  };
+
+  const { containerRef } = useFocusNavigation({
+    selector: '.dashboard-item-row',
+    enabled: !isLoading,
+    onOpen: handleOpenAtIndex,
+    onExpand: handleExpandAtIndex,
+    onDismiss: handleDismissAtIndex,
+  });
+
   if (isLoading) {
     return <p className="empty-state">Loading meetings...</p>;
   }
@@ -469,7 +498,7 @@ function MeetingList({ tab }: { tab: 'upcoming' | 'past' }) {
   }
 
   return (
-    <>
+    <div ref={containerRef}>
       <p style={{ color: 'var(--color-text-light)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-md)' }}>
         {total} {tab === 'upcoming' ? 'upcoming' : 'past'} meeting{total !== 1 ? 's' : ''}
       </p>
@@ -492,12 +521,36 @@ function MeetingList({ tab }: { tab: 'upcoming' | 'past' }) {
           onClose={() => setSelectedMeeting(null)}
         />
       )}
-    </>
+
+      {meetings.length > 0 && (
+        <KeyboardHints hints={['j/k navigate', 'Enter open modal', 'e expand/collapse', 'd dismiss', 't toggle tab']} />
+      )}
+    </div>
   );
 }
 
 export function MeetingsPage() {
   const [tab, setTab] = useState<'upcoming' | 'past'>('upcoming');
+
+  // Keyboard handler for tab switching
+  useEffect(() => {
+    const handleTabSwitch = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const tag = target.tagName;
+      // Skip if inside input/textarea
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (target.isContentEditable) return;
+
+      // 't' key toggles between tabs
+      if (e.key === 't' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        setTab(prev => prev === 'upcoming' ? 'past' : 'upcoming');
+      }
+    };
+
+    document.addEventListener('keydown', handleTabSwitch);
+    return () => document.removeEventListener('keydown', handleTabSwitch);
+  }, []);
 
   return (
     <div>

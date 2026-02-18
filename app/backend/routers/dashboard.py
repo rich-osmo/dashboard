@@ -1,6 +1,7 @@
 from collections import OrderedDict
 
 from fastapi import APIRouter, Query
+
 from database import get_db
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
@@ -8,9 +9,7 @@ router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
 def _dismissed_ids(db, source: str) -> set[str]:
     """Return set of dismissed item IDs for a given source."""
-    rows = db.execute(
-        "SELECT item_id FROM dismissed_dashboard_items WHERE source = ?", (source,)
-    ).fetchall()
+    rows = db.execute("SELECT item_id FROM dismissed_dashboard_items WHERE source = ?", (source,)).fetchall()
     return {r["item_id"] for r in rows}
 
 
@@ -69,10 +68,7 @@ def get_dashboard(days: int = Query(7, ge=1, le=90)):
             (cutoff,),
         ).fetchall()
     ]
-    emails_recent = [
-        t for t in _group_by_thread(raw_emails)
-        if t["id"] not in dismissed_email
-    ][:15]
+    emails_recent = [t for t in _group_by_thread(raw_emails) if t["id"] not in dismissed_email][:15]
 
     slack_recent = [
         dict(r)
@@ -121,14 +117,9 @@ def get_dashboard(days: int = Query(7, ge=1, le=90)):
         if str(r["number"]) not in dismissed_github
     ][:10]
 
-    notes_open = db.execute(
-        "SELECT COUNT(*) as count FROM notes WHERE status = 'open'"
-    ).fetchone()["count"]
+    notes_open = db.execute("SELECT COUNT(*) as count FROM notes WHERE status = 'open'").fetchone()["count"]
 
-    sync_status = {
-        row["source"]: dict(row)
-        for row in db.execute("SELECT * FROM sync_state").fetchall()
-    }
+    sync_status = {row["source"]: dict(row) for row in db.execute("SELECT * FROM sync_state").fetchall()}
 
     db.close()
 

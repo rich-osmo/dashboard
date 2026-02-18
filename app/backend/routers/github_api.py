@@ -1,9 +1,9 @@
 """Live GitHub API endpoints for PR browsing and repo search."""
-import json
+
+from typing import Optional
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
-from typing import Optional
 
 from config import GITHUB_REPO
 
@@ -16,6 +16,7 @@ def _get_headers() -> dict:
     """Get auth headers. Raises HTTPException(503) if gh CLI not authenticated."""
     try:
         from connectors.github import _get_headers as gh_headers
+
         return gh_headers()
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"GitHub auth not available: {e}")
@@ -35,7 +36,7 @@ def _parse_pr(pr: dict) -> dict:
         "merged_at": pr.get("merged_at") or pr.get("pull_request", {}).get("merged_at"),
         "head_ref": pr.get("head", {}).get("ref", ""),
         "base_ref": pr.get("base", {}).get("ref", ""),
-        "labels": [l["name"] for l in pr.get("labels", [])],
+        "labels": [lb["name"] for lb in pr.get("labels", [])],
         "requested_reviewers": [r["login"] for r in pr.get("requested_reviewers", [])],
         "review_requested": False,
     }
@@ -53,7 +54,7 @@ def _parse_search_item(item: dict) -> dict:
         "html_url": item.get("html_url", ""),
         "created_at": item.get("created_at", ""),
         "updated_at": item.get("updated_at", ""),
-        "labels": [l["name"] for l in item.get("labels", [])],
+        "labels": [lb["name"] for lb in item.get("labels", [])],
         "comments": item.get("comments", 0),
     }
 
@@ -76,6 +77,7 @@ def list_pulls(
             if review_requested:
                 # Use search API to find review-requested PRs
                 from connectors.github import _get_username
+
                 username = _get_username(client)
                 q_parts = [f"is:pr is:open review-requested:{username} repo:{GITHUB_REPO}"]
                 if author:
@@ -172,16 +174,18 @@ def get_pull(number: int):
             ]
 
         result = _parse_pr(pr)
-        result.update({
-            "body": pr.get("body") or "",
-            "additions": pr.get("additions", 0),
-            "deletions": pr.get("deletions", 0),
-            "changed_files": pr.get("changed_files", 0),
-            "files": files,
-            "reviews": reviews,
-            "comments": pr.get("comments", 0),
-            "review_comments": pr.get("review_comments", 0),
-        })
+        result.update(
+            {
+                "body": pr.get("body") or "",
+                "additions": pr.get("additions", 0),
+                "deletions": pr.get("deletions", 0),
+                "changed_files": pr.get("changed_files", 0),
+                "files": files,
+                "reviews": reviews,
+                "comments": pr.get("comments", 0),
+                "review_comments": pr.get("review_comments", 0),
+            }
+        )
         return result
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 404:
@@ -258,10 +262,7 @@ def search_code(
                     "name": item["name"],
                     "path": item["path"],
                     "html_url": item["html_url"],
-                    "text_matches": [
-                        {"fragment": tm.get("fragment", "")}
-                        for tm in item.get("text_matches", [])
-                    ],
+                    "text_matches": [{"fragment": tm.get("fragment", "")} for tm in item.get("text_matches", [])],
                 }
                 for item in data.get("items", [])
             ]
@@ -272,6 +273,7 @@ def search_code(
                 "items": items,
             }
     except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=e.response.status_code, detail=f"GitHub code search failed: {e.response.text[:500]}")
+        detail = f"GitHub code search failed: {e.response.text[:500]}"
+        raise HTTPException(status_code=e.response.status_code, detail=detail)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"GitHub code search failed: {e}")

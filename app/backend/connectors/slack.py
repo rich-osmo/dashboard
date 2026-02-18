@@ -1,14 +1,17 @@
 """Slack Web API connector for DMs and mentions."""
+
 import os
 import ssl
-import json
+
 import certifi
-from database import get_db
+
 from config import SLACK_MESSAGE_LIMIT
+from database import get_db
 
 try:
     from slack_sdk import WebClient
     from slack_sdk.errors import SlackApiError
+
     HAS_SLACK = True
 except ImportError:
     HAS_SLACK = False
@@ -18,6 +21,7 @@ def _get_client() -> "WebClient":
     token = os.environ.get("SLACK_TOKEN", "")
     if not token:
         from pathlib import Path
+
         env_path = Path(__file__).parent.parent / ".env"
         if env_path.exists():
             for line in env_path.read_text().splitlines():
@@ -66,9 +70,7 @@ def sync_slack_data() -> int:
                     # Build permalink for DMs
                     permalink = None
                     try:
-                        link_resp = client.chat_getPermalink(
-                            channel=ch["id"], message_ts=msg["ts"]
-                        )
+                        link_resp = client.chat_getPermalink(channel=ch["id"], message_ts=msg["ts"])
                         permalink = link_resp.get("permalink")
                     except Exception:
                         pass

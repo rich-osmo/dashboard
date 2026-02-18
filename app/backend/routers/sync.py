@@ -2,9 +2,11 @@ import json
 import traceback
 from datetime import datetime
 from pathlib import Path
+
 from fastapi import APIRouter, BackgroundTasks
-from database import get_db
+
 from connectors.markdown import parse_meeting_files
+from database import get_db
 from utils.employee_matching import rebuild_from_db
 
 router = APIRouter(prefix="/api/sync", tags=["sync"])
@@ -41,20 +43,27 @@ def sync_meeting_files():
             for m in meetings:
                 db.execute(
                     """INSERT OR REPLACE INTO meeting_files
-                       (employee_id, filename, filepath, meeting_date, title, summary, action_items_json, granola_link, content_markdown, last_modified)
+                       (employee_id, filename, filepath, meeting_date, title, summary,
+                        action_items_json, granola_link, content_markdown, last_modified)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
-                        m["employee_id"], m["filename"], m["filepath"],
-                        m["meeting_date"], m["title"], m["summary"],
-                        json.dumps(m["action_items"]), m["granola_link"],
-                        m["content_markdown"], m["last_modified"],
+                        m["employee_id"],
+                        m["filename"],
+                        m["filepath"],
+                        m["meeting_date"],
+                        m["title"],
+                        m["summary"],
+                        json.dumps(m["action_items"]),
+                        m["granola_link"],
+                        m["content_markdown"],
+                        m["last_modified"],
                     ),
                 )
             count += len(meetings)
         db.commit()
         rebuild_from_db()
         _update_sync_state("markdown", "success", None, count)
-    except Exception as e:
+    except Exception:
         db.rollback()
         _update_sync_state("markdown", "error", traceback.format_exc(), 0)
         raise
@@ -70,77 +79,96 @@ def sync_granola():
     """Parse Granola cache and populate granola_meetings table."""
     try:
         from connectors.granola import sync_granola_meetings
+
         count = sync_granola_meetings()
         _update_sync_state("granola", "success", None, count)
     except ImportError:
         _update_sync_state("granola", "error", "Granola connector not yet implemented", 0)
-    except Exception as e:
+    except Exception:
         _update_sync_state("granola", "error", traceback.format_exc(), 0)
 
 
 def sync_gmail():
     try:
         from connectors.gmail import sync_gmail_messages
+
         count = sync_gmail_messages()
         _update_sync_state("gmail", "success", None, count)
     except ImportError:
         _update_sync_state("gmail", "error", "Gmail connector not yet implemented", 0)
-    except Exception as e:
+    except Exception:
         _update_sync_state("gmail", "error", traceback.format_exc(), 0)
 
 
 def sync_calendar():
     try:
         from connectors.calendar_sync import sync_calendar_events
+
         count = sync_calendar_events()
         _update_sync_state("calendar", "success", None, count)
     except ImportError:
         _update_sync_state("calendar", "error", "Calendar connector not yet implemented", 0)
-    except Exception as e:
+    except Exception:
         _update_sync_state("calendar", "error", traceback.format_exc(), 0)
 
 
 def sync_slack():
     try:
         from connectors.slack import sync_slack_data
+
         count = sync_slack_data()
         _update_sync_state("slack", "success", None, count)
     except ImportError:
         _update_sync_state("slack", "error", "Slack connector not yet implemented", 0)
-    except Exception as e:
+    except Exception:
         _update_sync_state("slack", "error", traceback.format_exc(), 0)
 
 
 def sync_notion():
     try:
         from connectors.notion import sync_notion_pages
+
         count = sync_notion_pages()
         _update_sync_state("notion", "success", None, count)
     except ImportError:
         _update_sync_state("notion", "error", "Notion connector not yet implemented", 0)
-    except Exception as e:
+    except Exception:
         _update_sync_state("notion", "error", traceback.format_exc(), 0)
 
 
 def sync_github():
     try:
         from connectors.github import sync_github_prs
+
         count = sync_github_prs()
         _update_sync_state("github", "success", None, count)
     except ImportError:
         _update_sync_state("github", "error", "GitHub connector not available", 0)
-    except Exception as e:
+    except Exception:
         _update_sync_state("github", "error", traceback.format_exc(), 0)
+
+
+def sync_ramp():
+    try:
+        from connectors.ramp import sync_ramp_transactions
+
+        count = sync_ramp_transactions()
+        _update_sync_state("ramp", "success", None, count)
+    except ImportError:
+        _update_sync_state("ramp", "error", "Ramp connector not available", 0)
+    except Exception:
+        _update_sync_state("ramp", "error", traceback.format_exc(), 0)
 
 
 def sync_news():
     try:
         from connectors.news import sync_news as _sync_news
+
         count = _sync_news()
         _update_sync_state("news", "success", None, count)
     except ImportError:
         _update_sync_state("news", "error", "News connector not available", 0)
-    except Exception as e:
+    except Exception:
         _update_sync_state("news", "error", traceback.format_exc(), 0)
 
 
@@ -155,10 +183,12 @@ def _run_full_sync():
         sync_slack()
         sync_notion()
         sync_github()
+        sync_ramp()
         # News runs last — it reads from already-synced slack/email data
         sync_news()
         # Rebuild FTS indexes after all data is refreshed
         from database import rebuild_fts
+
         rebuild_fts()
     finally:
         _sync_running = False
@@ -183,6 +213,7 @@ def trigger_source_sync(source: str, background_tasks: BackgroundTasks):
         "slack": sync_slack,
         "notion": sync_notion,
         "github": sync_github,
+        "ramp": sync_ramp,
         "news": sync_news,
     }
     fn = sync_map.get(source)

@@ -1,9 +1,16 @@
 import json
 from datetime import datetime
+
 from fastapi import APIRouter, HTTPException
+
+from config import EXECUTIVES_DIR, HIDDEN_TEAMS_DIR, TEAMS_DIR
 from database import get_db
-from config import TEAMS_DIR, HIDDEN_TEAMS_DIR, EXECUTIVES_DIR
-from models import EmployeeCreate, EmployeeUpdate, OneOnOneNoteCreate, OneOnOneNoteUpdate
+from models import (
+    EmployeeCreate,
+    EmployeeUpdate,
+    OneOnOneNoteCreate,
+    OneOnOneNoteUpdate,
+)
 from utils.employee_matching import get_employee_email_patterns, rebuild_from_db
 
 router = APIRouter(prefix="/api/employees", tags=["employees"])
@@ -13,7 +20,8 @@ router = APIRouter(prefix="/api/employees", tags=["employees"])
 def list_employees():
     db = get_db()
     rows = db.execute(
-        "SELECT id, name, title, reports_to, depth, has_meetings_dir, is_executive, group_name, email FROM employees ORDER BY name"
+        "SELECT id, name, title, reports_to, depth, has_meetings_dir, is_executive, group_name, email "
+        "FROM employees ORDER BY name"
     ).fetchall()
     db.close()
     return [dict(r) for r in rows]
@@ -46,8 +54,12 @@ def create_employee(emp: EmployeeCreate):
         """INSERT INTO employees (id, name, title, reports_to, group_name, email, dir_path, is_executive, created_at)
            VALUES (?, ?, ?, ?, ?, ?, '', ?, ?)""",
         (
-            emp_id, emp.name.strip(), emp.title, emp.reports_to,
-            emp.group_name, emp.email,
+            emp_id,
+            emp.name.strip(),
+            emp.title,
+            emp.reports_to,
+            emp.group_name,
+            emp.email,
             1 if emp.group_name == "exec" else 0,
             datetime.now().isoformat(),
         ),
@@ -239,22 +251,26 @@ def get_employee(employee_id: str):
     # Recent meeting summaries: unified from meeting_files + granola_meetings, top 3
     summaries = []
     for mf in emp["meeting_files"][:5]:
-        summaries.append({
-            "date": mf.get("meeting_date", ""),
-            "title": mf.get("title", ""),
-            "summary": (mf.get("summary") or "")[:200],
-            "source": "file",
-        })
+        summaries.append(
+            {
+                "date": mf.get("meeting_date", ""),
+                "title": mf.get("title", ""),
+                "summary": (mf.get("summary") or "")[:200],
+                "source": "file",
+            }
+        )
     file_dates = {s["date"] for s in summaries}
     for gm in emp["granola_meetings"][:5]:
         g_date = (gm.get("created_at") or "")[:10]
         if g_date and g_date not in file_dates:
-            summaries.append({
-                "date": g_date,
-                "title": gm.get("title", ""),
-                "summary": (gm.get("panel_summary_plain") or "")[:200],
-                "source": "granola",
-            })
+            summaries.append(
+                {
+                    "date": g_date,
+                    "title": gm.get("title", ""),
+                    "summary": (gm.get("panel_summary_plain") or "")[:200],
+                    "source": "granola",
+                }
+            )
     summaries.sort(key=lambda s: s["date"] or "", reverse=True)
     emp["recent_meeting_summaries"] = summaries[:3]
 
@@ -263,6 +279,7 @@ def get_employee(employee_id: str):
 
 
 # --- 1:1 Notes CRUD ---
+
 
 @router.get("/{employee_id}/one-on-one-notes")
 def list_one_on_one_notes(employee_id: str):
@@ -344,11 +361,13 @@ def delete_one_on_one_note(employee_id: str, note_id: int):
 
 # --- One-Time Markdown Import ---
 
+
 @router.post("/import-markdown")
 def import_from_markdown():
     """One-time import of employee data from markdown files into SQLite."""
-    from connectors.markdown import parse_org_tree, parse_role_md
     from pathlib import Path
+
+    from connectors.markdown import parse_org_tree
 
     db = get_db()
     imported = 0
@@ -381,18 +400,31 @@ def import_from_markdown():
                         has_meetings_dir = ?
                     WHERE id = ?""",
                     (
-                        emp["dir_path"], group, int(emp.get("is_executive", False)),
-                        role_content, int(emp["has_meetings_dir"]), emp["id"],
+                        emp["dir_path"],
+                        group,
+                        int(emp.get("is_executive", False)),
+                        role_content,
+                        int(emp["has_meetings_dir"]),
+                        emp["id"],
                     ),
                 )
             else:
                 db.execute(
-                    """INSERT INTO employees (id, name, title, reports_to, depth, dir_path, has_meetings_dir, is_executive, group_name, role_content, created_at)
+                    """INSERT INTO employees
+                       (id, name, title, reports_to, depth, dir_path, has_meetings_dir,
+                        is_executive, group_name, role_content, created_at)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
-                        emp["id"], emp["name"], emp["title"], emp["reports_to"],
-                        emp["depth"], emp["dir_path"], int(emp["has_meetings_dir"]),
-                        int(emp.get("is_executive", False)), group, role_content,
+                        emp["id"],
+                        emp["name"],
+                        emp["title"],
+                        emp["reports_to"],
+                        emp["depth"],
+                        emp["dir_path"],
+                        int(emp["has_meetings_dir"]),
+                        int(emp.get("is_executive", False)),
+                        group,
+                        role_content,
                         datetime.now().isoformat(),
                     ),
                 )

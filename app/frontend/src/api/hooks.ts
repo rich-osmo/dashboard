@@ -24,6 +24,10 @@ import type {
   PrioritizedNotionData,
   PrioritizedEmailData,
   EmailThreadDetail,
+  RampData,
+  PrioritizedNewsData,
+  ClaudeSession,
+  ClaudeSessionContent,
 } from './types';
 
 export function useEmployees() {
@@ -521,6 +525,24 @@ export function useNews() {
   });
 }
 
+export function usePrioritizedNews(days: number = 14) {
+  return useQuery({
+    queryKey: ['news-prioritized', days],
+    queryFn: () => api.get<PrioritizedNewsData>(`/news/prioritized?days=${days}`),
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
+export function useRefreshPrioritizedNews(days: number = 14) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.get<PrioritizedNewsData>(`/news/prioritized?refresh=true&days=${days}`),
+    onSuccess: (data) => {
+      qc.setQueryData<PrioritizedNewsData>(['news-prioritized', days], data);
+    },
+  });
+}
+
 // --- Meetings ---
 
 const MEETINGS_PAGE_SIZE = 30;
@@ -628,6 +650,26 @@ export function useRefreshPrioritizedEmail(days: number = 7) {
   });
 }
 
+// --- Prioritized Ramp ---
+
+export function usePrioritizedRamp(days: number = 7) {
+  return useQuery({
+    queryKey: ['ramp-prioritized', days],
+    queryFn: () => api.get<RampData>(`/ramp/prioritized?days=${days}`),
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
+export function useRefreshPrioritizedRamp(days: number = 7) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.get<RampData>(`/ramp/prioritized?refresh=true&days=${days}`),
+    onSuccess: (data) => {
+      qc.setQueryData<RampData>(['ramp-prioritized', days], data);
+    },
+  });
+}
+
 export function useEmailThread(threadId: string | null) {
   return useQuery({
     queryKey: ['email-thread', threadId],
@@ -646,6 +688,8 @@ export function useDismissPrioritizedItem() {
       qc.invalidateQueries({ queryKey: ['slack-prioritized'] });
       qc.invalidateQueries({ queryKey: ['notion-prioritized'] });
       qc.invalidateQueries({ queryKey: ['email-prioritized'] });
+      qc.invalidateQueries({ queryKey: ['ramp-prioritized'] });
+      qc.invalidateQueries({ queryKey: ['news-prioritized'] });
       qc.invalidateQueries({ queryKey: ['dashboard'] });
       pushUndo({
         label: `${source} item dismissed`,
@@ -654,9 +698,65 @@ export function useDismissPrioritizedItem() {
           qc.invalidateQueries({ queryKey: ['slack-prioritized'] });
           qc.invalidateQueries({ queryKey: ['notion-prioritized'] });
           qc.invalidateQueries({ queryKey: ['email-prioritized'] });
+          qc.invalidateQueries({ queryKey: ['ramp-prioritized'] });
           qc.invalidateQueries({ queryKey: ['dashboard'] });
         },
       });
+    },
+  });
+}
+
+// --- Claude Sessions ---
+
+export function useClaudeSessions() {
+  return useQuery({
+    queryKey: ['claude-sessions'],
+    queryFn: () => api.get<ClaudeSession[]>('/claude/sessions'),
+  });
+}
+
+export function useClaudeSessionContent(id: number | null) {
+  return useQuery({
+    queryKey: ['claude-session-content', id],
+    queryFn: () => api.get<ClaudeSessionContent>(`/claude/sessions/${id}/content`),
+    enabled: !!id,
+  });
+}
+
+export function useSaveClaudeSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (session: {
+      title?: string;
+      content: string;
+      plain_text?: string;
+      rows?: number;
+      cols?: number;
+    }) => api.post<ClaudeSession>('/claude/sessions', session),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['claude-sessions'] });
+    },
+  });
+}
+
+export function useUpdateClaudeSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...update }: { id: number; title?: string }) =>
+      api.patch<ClaudeSession>(`/claude/sessions/${id}`, update),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['claude-sessions'] });
+    },
+  });
+}
+
+export function useDeleteClaudeSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.delete(`/claude/sessions/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['claude-sessions'] });
+      qc.invalidateQueries({ queryKey: ['claude-session-content'] });
     },
   });
 }

@@ -1,10 +1,11 @@
 import re
-import json
-from fastapi import APIRouter, HTTPException, Query
+from datetime import datetime
 from typing import Optional
+
+from fastapi import APIRouter, HTTPException, Query
+
 from database import get_db, rebuild_fts_table
 from models import NoteCreate, NoteUpdate
-from datetime import datetime
 
 router = APIRouter(prefix="/api/notes", tags=["notes"])
 
@@ -57,7 +58,10 @@ def _resolve_one_on_one(note: NoteCreate, db) -> NoteCreate:
             first = name.split()[0].lower()
             last = name.split()[-1].lower() if len(name.split()) > 1 else ""
             lower_text = text_for_match.lower()
-            if name.lower() in lower_text or first in lower_text.split()[:3] or (last and last in lower_text.split()[:3]):
+            name_match = name.lower() in lower_text
+            first_match = first in lower_text.split()[:3]
+            last_match = last and last in lower_text.split()[:3]
+            if name_match or first_match or last_match:
                 updates["employee_id"] = row["id"]
                 updates["employee_ids"] = [row["id"]]
                 updates["is_one_on_one"] = True
@@ -108,11 +112,7 @@ def list_notes(
 
     if employee_id:
         # Filter via junction table
-        query = (
-            "SELECT DISTINCT t.* FROM notes t "
-            "JOIN note_employees ne ON t.id = ne.note_id "
-            "WHERE ne.employee_id = ?"
-        )
+        query = "SELECT DISTINCT t.* FROM notes t JOIN note_employees ne ON t.id = ne.note_id WHERE ne.employee_id = ?"
         params: list = [employee_id]
     else:
         query = "SELECT t.* FROM notes t WHERE 1=1"
@@ -148,7 +148,7 @@ def _parse_issue_prefix(text: str) -> dict | None:
             tshirt_size = tag
         elif tag.startswith("p"):
             priority = int(tag[1])
-        remaining = remaining[match.end():]
+        remaining = remaining[match.end() :]
     return {"title": remaining.strip(), "tshirt_size": tshirt_size, "priority": priority}
 
 
@@ -159,8 +159,9 @@ def create_note(note: NoteCreate):
     # Intercept [i] prefix → create an issue instead
     parsed = _parse_issue_prefix(note.text)
     if parsed:
-        from routers.issues import create_issue as _create_issue
         from models import IssueCreate
+        from routers.issues import create_issue as _create_issue
+
         employee_ids = note.employee_ids or []
         if not employee_ids:
             detected = _resolve_mentions(parsed["title"], db)

@@ -1,12 +1,14 @@
 """Live Slack API endpoints for search, channel history, and messaging."""
+
 import json
 import os
 import ssl
-import certifi
 import time
-from datetime import datetime, timedelta
-from fastapi import APIRouter, HTTPException, Query
+from datetime import datetime
 from typing import Optional
+
+import certifi
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from database import get_db
@@ -34,6 +36,7 @@ def _get_client():
     token = os.environ.get("SLACK_TOKEN", "")
     if not token:
         from pathlib import Path
+
         env_path = Path(__file__).parent.parent / ".env"
         if env_path.exists():
             for line in env_path.read_text().splitlines():
@@ -69,15 +72,17 @@ def search_slack(
     messages = []
     for m in matches:
         channel = m.get("channel", {})
-        messages.append({
-            "text": m.get("text", ""),
-            "user": m.get("username", ""),
-            "channel_id": channel.get("id", ""),
-            "channel_name": channel.get("name", ""),
-            "ts": m.get("ts", ""),
-            "thread_ts": m.get("thread_ts"),
-            "permalink": m.get("permalink", ""),
-        })
+        messages.append(
+            {
+                "text": m.get("text", ""),
+                "user": m.get("username", ""),
+                "channel_id": channel.get("id", ""),
+                "channel_name": channel.get("name", ""),
+                "ts": m.get("ts", ""),
+                "thread_ts": m.get("thread_ts"),
+                "permalink": m.get("permalink", ""),
+            }
+        )
 
     total = result.get("messages", {}).get("total", 0)
     return {"query": q, "total": total, "count": len(messages), "messages": messages}
@@ -97,15 +102,17 @@ def list_channels(
 
     channels = []
     for ch in result.get("channels", []):
-        channels.append({
-            "id": ch.get("id", ""),
-            "name": ch.get("name", ""),
-            "is_private": ch.get("is_private", False),
-            "is_member": ch.get("is_member", False),
-            "topic": ch.get("topic", {}).get("value", ""),
-            "purpose": ch.get("purpose", {}).get("value", ""),
-            "num_members": ch.get("num_members", 0),
-        })
+        channels.append(
+            {
+                "id": ch.get("id", ""),
+                "name": ch.get("name", ""),
+                "is_private": ch.get("is_private", False),
+                "is_member": ch.get("is_member", False),
+                "topic": ch.get("topic", {}).get("value", ""),
+                "purpose": ch.get("purpose", {}).get("value", ""),
+                "num_members": ch.get("num_members", 0),
+            }
+        )
 
     return {"count": len(channels), "channels": channels}
 
@@ -131,17 +138,18 @@ def channel_history(
 
     messages = []
     for msg in result.get("messages", []):
-        messages.append({
-            "text": msg.get("text", ""),
-            "user": msg.get("user", ""),
-            "ts": msg.get("ts", ""),
-            "thread_ts": msg.get("thread_ts"),
-            "reply_count": msg.get("reply_count", 0),
-            "reactions": [
-                {"name": r.get("name", ""), "count": r.get("count", 0)}
-                for r in msg.get("reactions", [])
-            ],
-        })
+        messages.append(
+            {
+                "text": msg.get("text", ""),
+                "user": msg.get("user", ""),
+                "ts": msg.get("ts", ""),
+                "thread_ts": msg.get("thread_ts"),
+                "reply_count": msg.get("reply_count", 0),
+                "reactions": [
+                    {"name": r.get("name", ""), "count": r.get("count", 0)} for r in msg.get("reactions", [])
+                ],
+            }
+        )
 
     return {"channel_id": channel_id, "count": len(messages), "messages": messages}
 
@@ -157,11 +165,13 @@ def get_thread(channel_id: str, thread_ts: str):
 
     messages = []
     for msg in result.get("messages", []):
-        messages.append({
-            "text": msg.get("text", ""),
-            "user": msg.get("user", ""),
-            "ts": msg.get("ts", ""),
-        })
+        messages.append(
+            {
+                "text": msg.get("text", ""),
+                "user": msg.get("user", ""),
+                "ts": msg.get("ts", ""),
+            }
+        )
 
     return {"channel_id": channel_id, "thread_ts": thread_ts, "count": len(messages), "messages": messages}
 
@@ -242,9 +252,7 @@ def _rank_slack_with_gemini(messages: list[dict]) -> list[dict]:
 
 
 def _dismissed_slack_ids(db) -> set[str]:
-    rows = db.execute(
-        "SELECT item_id FROM dismissed_dashboard_items WHERE source = 'slack'"
-    ).fetchall()
+    rows = db.execute("SELECT item_id FROM dismissed_dashboard_items WHERE source = 'slack'").fetchall()
     return {r["item_id"] for r in rows}
 
 
@@ -263,9 +271,9 @@ def get_prioritized_slack(refresh: bool = Query(False), days: int = Query(7, ge=
         if cached:
             data = json.loads(cached["data_json"])
             data["items"] = [
-                item for item in data.get("items", [])
-                if item["id"] not in dismissed
-                and _ts_within_days(item.get("ts"), days)
+                item
+                for item in data.get("items", [])
+                if item["id"] not in dismissed and _ts_within_days(item.get("ts"), days)
             ]
             db.close()
             return data
@@ -311,18 +319,20 @@ def get_prioritized_slack(refresh: bool = Query(False), days: int = Query(7, ge=
         msg = msg_lookup.get(msg_id)
         if not msg:
             continue
-        items.append({
-            "id": msg["id"],
-            "user_name": msg["user_name"],
-            "text": msg["text"],
-            "channel_name": msg["channel_name"],
-            "channel_type": msg["channel_type"],
-            "ts": msg["ts"],
-            "is_mention": bool(msg["is_mention"]),
-            "permalink": msg["permalink"],
-            "priority_score": rank.get("priority_score", 5),
-            "priority_reason": rank.get("reason", ""),
-        })
+        items.append(
+            {
+                "id": msg["id"],
+                "user_name": msg["user_name"],
+                "text": msg["text"],
+                "channel_name": msg["channel_name"],
+                "channel_type": msg["channel_type"],
+                "ts": msg["ts"],
+                "is_mention": bool(msg["is_mention"]),
+                "permalink": msg["permalink"],
+                "priority_score": rank.get("priority_score", 5),
+                "priority_reason": rank.get("reason", ""),
+            }
+        )
 
     # Sort by score desc, filter dismissed, take top 50
     items.sort(key=lambda x: x["priority_score"], reverse=True)

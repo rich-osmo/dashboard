@@ -7,6 +7,8 @@ import {
   useDeleteNote,
 } from '../api/hooks';
 import type { Note } from '../api/types';
+import { useFocusNavigation } from '../hooks/useFocusNavigation';
+import { KeyboardHints } from '../components/shared/KeyboardHints';
 
 function isThought(note: Note): boolean {
   return note.text.startsWith('[t]') || note.text.startsWith('[T]');
@@ -16,17 +18,39 @@ function ThoughtItem({
   note,
   onToggle,
   onDelete,
+  onUpdate,
 }: {
   note: Note;
   onToggle: () => void;
   onDelete: () => void;
+  onUpdate: (text: string) => void;
 }) {
   // Strip the [t] prefix for display
   const displayText = note.text.replace(/^\[[tT]\]\s*/, '');
+  const [editing, setEditing] = useState(false);
+  const [editText, setEditText] = useState(displayText);
+  const editRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (editing && editRef.current) {
+      editRef.current.focus();
+      editRef.current.selectionStart = editRef.current.value.length;
+    }
+  }, [editing]);
+
+  const saveEdit = () => {
+    const trimmed = editText.trim();
+    if (trimmed && trimmed !== displayText) {
+      // Re-add [t] prefix when saving
+      onUpdate(`[t] ${trimmed}`);
+    }
+    setEditing(false);
+  };
+
   return (
     <div
       id={`note-${note.id}`}
-      className={`note-item ${note.status === 'done' ? 'done' : ''}`}
+      className={`note-item dashboard-item-row ${note.status === 'done' ? 'done' : ''}`}
     >
       <input
         type="checkbox"
@@ -34,7 +58,31 @@ function ThoughtItem({
         onChange={onToggle}
       />
       <div className="note-text">
-        <div>{displayText}</div>
+        {editing ? (
+          <textarea
+            ref={editRef}
+            className="note-input"
+            value={editText}
+            onChange={(e) => setEditText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit(); }
+              if (e.key === 'Escape') { setEditText(displayText); setEditing(false); }
+            }}
+            onBlur={saveEdit}
+            rows={2}
+            style={{
+              width: '100%',
+              fontSize: 'inherit',
+              padding: '2px 4px',
+              fontFamily: 'var(--font-body)',
+              resize: 'vertical',
+            }}
+          />
+        ) : (
+          <div onDoubleClick={() => { setEditText(displayText); setEditing(true); }} style={{ cursor: 'text' }}>
+            {displayText}
+          </div>
+        )}
         <div className="note-meta">
           {note.employee_name && (
             <a href={`/employees/${note.employee_id}`}>{note.employee_name}</a>
@@ -71,6 +119,37 @@ export function ThoughtsPage() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const thoughts = notes?.filter(isThought) ?? [];
+
+  // Keyboard navigation callbacks
+  const handleToggleAtIndex = (index: number) => {
+    const thought = thoughts[index];
+    if (thought) {
+      updateNote.mutate({
+        id: thought.id,
+        status: thought.status === 'done' ? 'open' : 'done',
+      });
+    }
+  };
+
+  const handleEditAtIndex = (index: number) => {
+    const thought = thoughts[index];
+    if (thought) {
+      // Trigger double-click behavior to start editing
+      const el = document.getElementById(`note-${thought.id}`);
+      const textDiv = el?.querySelector('.note-text > div');
+      if (textDiv) {
+        (textDiv as HTMLElement).dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      }
+    }
+  };
+
+  const { containerRef } = useFocusNavigation({
+    selector: '.dashboard-item-row',
+    enabled: !isLoading,
+    onDismiss: handleToggleAtIndex, // 'd' toggles done status
+    onOpen: handleEditAtIndex,      // 'Enter' starts editing
+    onExpand: handleEditAtIndex,     // 'e' starts editing
+  });
 
   // Deep-link: scroll to and highlight a specific thought from search
   useEffect(() => {
@@ -119,7 +198,7 @@ export function ThoughtsPage() {
   };
 
   return (
-    <div>
+    <div ref={containerRef}>
       <h1>Thoughts</h1>
 
       <div className="filters" style={{ marginBottom: 'var(--space-lg)' }}>
@@ -147,6 +226,7 @@ export function ThoughtsPage() {
             })
           }
           onDelete={() => deleteNote.mutate(note.id)}
+          onUpdate={(text) => updateNote.mutate({ id: note.id, text })}
         />
       ))}
 
@@ -191,6 +271,10 @@ export function ThoughtsPage() {
           </button>
         </form>
       </div>
+
+      {thoughts.length > 0 && (
+        <KeyboardHints hints={['j/k navigate', 'Enter edit', 'e edit', 'd toggle done']} />
+      )}
     </div>
   );
 }

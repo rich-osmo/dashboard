@@ -1,10 +1,12 @@
 """Shared Google API authentication."""
+
 import json
 from pathlib import Path
-from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request
-from config import GCLOUD_CREDENTIALS_PATH, GOOGLE_SCOPES
 
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+
+from config import GCLOUD_CREDENTIALS_PATH, GOOGLE_SCOPES
 
 TOKEN_PATH = Path(__file__).parent.parent / ".google_token.json"
 _cached_creds: Credentials | None = None
@@ -38,9 +40,7 @@ def get_google_credentials() -> Credentials:
 
     # Fall back to ADC
     if not GCLOUD_CREDENTIALS_PATH.exists():
-        raise FileNotFoundError(
-            "No Google credentials found. Run the OAuth flow at /api/auth/google"
-        )
+        raise FileNotFoundError("No Google credentials found. Run the OAuth flow at /api/auth/google")
 
     with open(GCLOUD_CREDENTIALS_PATH) as f:
         cred_data = json.load(f)

@@ -1,13 +1,15 @@
 """Live Gmail API endpoints for search, message reading, and prioritized email."""
+
 import base64
 import json
 import os
 import re
 from collections import OrderedDict
 from datetime import datetime
+
 from fastapi import APIRouter, HTTPException, Query
-from typing import Optional
 from googleapiclient.discovery import build
+
 from connectors.google_auth import get_google_credentials
 from database import get_db
 
@@ -93,12 +95,7 @@ def search_gmail(
     """Search Gmail using native query syntax."""
     service = _get_service()
     try:
-        results = (
-            service.users()
-            .messages()
-            .list(userId="me", q=q, maxResults=max_results)
-            .execute()
-        )
+        results = service.users().messages().list(userId="me", q=q, maxResults=max_results).execute()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gmail search failed: {e}")
 
@@ -113,7 +110,9 @@ def search_gmail(
                 service.users()
                 .messages()
                 .get(
-                    userId="me", id=msg_ref["id"], format="metadata",
+                    userId="me",
+                    id=msg_ref["id"],
+                    format="metadata",
                     metadataHeaders=["From", "To", "Subject", "Date"],
                 )
                 .execute()
@@ -130,12 +129,7 @@ def get_thread(thread_id: str):
     """Get a full email thread with message bodies."""
     service = _get_service()
     try:
-        thread = (
-            service.users()
-            .threads()
-            .get(userId="me", id=thread_id, format="full")
-            .execute()
-        )
+        thread = service.users().threads().get(userId="me", id=thread_id, format="full").execute()
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Thread not found: {e}")
 
@@ -151,12 +145,7 @@ def get_message(message_id: str):
     """Get a single email message with full body text."""
     service = _get_service()
     try:
-        msg = (
-            service.users()
-            .messages()
-            .get(userId="me", id=message_id, format="full")
-            .execute()
-        )
+        msg = service.users().messages().get(userId="me", id=message_id, format="full").execute()
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Message not found: {e}")
 
@@ -224,9 +213,7 @@ def _rank_email_with_gemini(emails: list[dict]) -> list[dict]:
 
 
 def _dismissed_email_ids(db) -> set[str]:
-    rows = db.execute(
-        "SELECT item_id FROM dismissed_dashboard_items WHERE source = 'email'"
-    ).fetchall()
+    rows = db.execute("SELECT item_id FROM dismissed_dashboard_items WHERE source = 'email'").fetchall()
     return {r["item_id"] for r in rows}
 
 
@@ -244,10 +231,7 @@ def get_prioritized_email(refresh: bool = Query(False), days: int = Query(7, ge=
         ).fetchone()
         if cached:
             data = json.loads(cached["data_json"])
-            data["items"] = [
-                item for item in data.get("items", [])
-                if item["id"] not in dismissed
-            ]
+            data["items"] = [item for item in data.get("items", []) if item["id"] not in dismissed]
             db.close()
             return data
 
@@ -277,16 +261,18 @@ def get_prioritized_email(refresh: bool = Query(False), days: int = Query(7, ge=
     for tid, msgs in thread_groups.items():
         latest = msgs[0]  # rows ordered by date DESC
         combined_snippet = " | ".join((m["snippet"] or "")[:150] for m in msgs[:3])
-        emails_for_llm.append({
-            "id": tid,
-            "subject": latest["subject"],
-            "from_name": latest["from_name"],
-            "from_email": latest["from_email"],
-            "snippet": combined_snippet[:400],
-            "is_unread": any(m["is_unread"] for m in msgs),
-            "date": latest["date"],
-            "message_count": len(msgs),
-        })
+        emails_for_llm.append(
+            {
+                "id": tid,
+                "subject": latest["subject"],
+                "from_name": latest["from_name"],
+                "from_email": latest["from_email"],
+                "snippet": combined_snippet[:400],
+                "is_unread": any(m["is_unread"] for m in msgs),
+                "date": latest["date"],
+                "message_count": len(msgs),
+            }
+        )
 
     try:
         ranked = _rank_email_with_gemini(emails_for_llm)
@@ -317,11 +303,13 @@ def get_prioritized_email(refresh: bool = Query(False), days: int = Query(7, ge=
         thread = thread_lookup.get(tid)
         if not thread:
             continue
-        items.append({
-            **thread,
-            "priority_score": rank.get("priority_score", 5),
-            "priority_reason": rank.get("reason", ""),
-        })
+        items.append(
+            {
+                **thread,
+                "priority_score": rank.get("priority_score", 5),
+                "priority_reason": rank.get("reason", ""),
+            }
+        )
 
     # Sort by score desc, filter dismissed, take top 50
     items.sort(key=lambda x: x["priority_score"], reverse=True)

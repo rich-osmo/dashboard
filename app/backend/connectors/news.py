@@ -8,10 +8,10 @@ Extracts article/paper links from:
 
 import hashlib
 import re
-import json
 import traceback
 from datetime import datetime, timezone
 from urllib.parse import urlparse
+
 from database import get_db
 
 # Domains to skip — internal tools, not articles
@@ -162,16 +162,18 @@ def _extract_urls_from_slack() -> list[dict]:
                 except (ValueError, TypeError, OSError):
                     published = None
 
-                items.append({
-                    "id": _make_id(url),
-                    "title": _title_from_url(url),
-                    "url": url,
-                    "source": "slack",
-                    "source_detail": f"{row['user_name']} in #{row['channel_name'] or 'DM'}",
-                    "domain": _extract_domain(url),
-                    "snippet": text[:300] if text else None,
-                    "published_at": published,
-                })
+                items.append(
+                    {
+                        "id": _make_id(url),
+                        "title": _title_from_url(url),
+                        "url": url,
+                        "source": "slack",
+                        "source_detail": f"{row['user_name']} in #{row['channel_name'] or 'DM'}",
+                        "domain": _extract_domain(url),
+                        "snippet": text[:300] if text else None,
+                        "published_at": published,
+                    }
+                )
     finally:
         db.close()
     return items
@@ -194,16 +196,18 @@ def _extract_urls_from_email() -> list[dict]:
                 url = _clean_url(raw_url)
                 if not _should_include(url):
                     continue
-                items.append({
-                    "id": _make_id(url),
-                    "title": _title_from_url(url),
-                    "url": url,
-                    "source": "email",
-                    "source_detail": row["from_name"] or row["from_email"] or "Unknown",
-                    "domain": _extract_domain(url),
-                    "snippet": row["subject"],
-                    "published_at": row["date"],
-                })
+                items.append(
+                    {
+                        "id": _make_id(url),
+                        "title": _title_from_url(url),
+                        "url": url,
+                        "source": "email",
+                        "source_detail": row["from_name"] or row["from_email"] or "Unknown",
+                        "domain": _extract_domain(url),
+                        "snippet": row["subject"],
+                        "published_at": row["date"],
+                    }
+                )
     finally:
         db.close()
     return items
@@ -255,7 +259,13 @@ def _fetch_web_news() -> list[dict]:
 
                 title = title_match.group(1) if title_match else "Untitled"
                 # Unescape basic HTML entities
-                title = title.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&#39;", "'").replace("&quot;", '"')
+                title = (
+                    title.replace("&amp;", "&")
+                    .replace("&lt;", "<")
+                    .replace("&gt;", ">")
+                    .replace("&#39;", "'")
+                    .replace("&quot;", '"')
+                )
 
                 link = ""
                 if link_match:
@@ -267,22 +277,25 @@ def _fetch_web_news() -> list[dict]:
                 if pubdate_match:
                     try:
                         from email.utils import parsedate_to_datetime
+
                         published = parsedate_to_datetime(pubdate_match.group(1)).isoformat()
                     except Exception:
                         published = pubdate_match.group(1)
 
                 source_name = source_match.group(1) if source_match else "Google News"
 
-                items.append({
-                    "id": _make_id(link),
-                    "title": title,
-                    "url": link,
-                    "source": "web",
-                    "source_detail": source_name,
-                    "domain": _extract_domain(link),
-                    "snippet": None,
-                    "published_at": published,
-                })
+                items.append(
+                    {
+                        "id": _make_id(link),
+                        "title": title,
+                        "url": link,
+                        "source": "web",
+                        "source_detail": source_name,
+                        "domain": _extract_domain(link),
+                        "snippet": None,
+                        "published_at": published,
+                    }
+                )
         except Exception:
             continue
 

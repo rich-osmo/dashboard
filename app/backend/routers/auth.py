@@ -1,8 +1,11 @@
 """Authentication status and management for connected services."""
+
 import os
 import traceback
 from pathlib import Path
+
 from fastapi import APIRouter
+
 from config import GCLOUD_CREDENTIALS_PATH, GRANOLA_CACHE_PATH
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -21,6 +24,7 @@ def _check_google() -> dict:
     result["configured"] = True
     try:
         from connectors.google_auth import get_google_credentials
+
         creds = get_google_credentials()
         if creds and creds.valid:
             result["connected"] = True
@@ -48,6 +52,7 @@ def _check_slack() -> dict:
     result["configured"] = True
     try:
         from slack_sdk import WebClient
+
         client = WebClient(token=token)
         resp = client.auth_test()
         if resp.get("ok"):
@@ -75,6 +80,7 @@ def _check_notion() -> dict:
     result["configured"] = True
     try:
         import httpx
+
         resp = httpx.get(
             "https://api.notion.com/v1/users/me",
             headers={
@@ -100,12 +106,14 @@ def _check_notion() -> dict:
 def _check_github() -> dict:
     """Check GitHub auth via gh CLI token."""
     import subprocess
+
     result = {"configured": False, "connected": False, "error": None, "detail": None}
     try:
         proc = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, timeout=5)
         if proc.returncode == 0 and proc.stdout.strip():
             result["configured"] = True
             import httpx
+
             resp = httpx.get(
                 "https://api.github.com/user",
                 headers={
@@ -129,6 +137,30 @@ def _check_github() -> dict:
     return result
 
 
+def _check_ramp() -> dict:
+    """Check Ramp auth status by validating credentials."""
+    result = {"configured": False, "connected": False, "error": None, "detail": None}
+    client_id = os.environ.get("RAMP_CLIENT_ID", "")
+    client_secret = os.environ.get("RAMP_CLIENT_SECRET", "")
+
+    if not client_id or not client_secret:
+        result["detail"] = "RAMP_CLIENT_ID and RAMP_CLIENT_SECRET not set in .env"
+        return result
+
+    result["configured"] = True
+    try:
+        from connectors.ramp import check_ramp_connection
+
+        check = check_ramp_connection()
+        result["connected"] = check["connected"]
+        result["error"] = check.get("error")
+        result["detail"] = check.get("detail")
+    except Exception as e:
+        result["error"] = str(e)
+
+    return result
+
+
 def _check_granola() -> dict:
     """Check if Granola cache file exists (no auth needed)."""
     result = {"configured": False, "connected": False, "error": None, "detail": None}
@@ -146,6 +178,7 @@ def _check_granola() -> dict:
 def _get_sync_states() -> dict:
     """Fetch last sync state per source from the database."""
     from database import get_db
+
     db = get_db()
     rows = db.execute("SELECT * FROM sync_state").fetchall()
     db.close()
@@ -167,6 +200,7 @@ _AUTH_TO_SYNC = {
     "notion": ["notion"],
     "granola": ["granola"],
     "github": ["github"],
+    "ramp": ["ramp"],
 }
 
 
@@ -181,6 +215,7 @@ def auth_status():
         "notion": _check_notion(),
         "granola": _check_granola(),
         "github": _check_github(),
+        "ramp": _check_ramp(),
     }
 
     # Attach sync state to each service
@@ -200,6 +235,7 @@ def google_auth():
     """Trigger browser-based Google OAuth flow."""
     try:
         from connectors.google_auth import run_oauth_flow
+
         run_oauth_flow()
         return {"status": "authenticated"}
     except Exception as e:
@@ -214,6 +250,7 @@ def google_revoke():
         # Clear cached credentials
         try:
             from connectors import google_auth
+
             google_auth._cached_creds = None
         except Exception:
             pass
@@ -230,6 +267,7 @@ def test_connection(service: str):
         "notion": _check_notion,
         "granola": _check_granola,
         "github": _check_github,
+        "ramp": _check_ramp,
     }
     checker = checkers.get(service)
     if not checker:

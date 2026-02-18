@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useIsFetching } from '@tanstack/react-query';
 import { Sidebar } from './components/layout/Sidebar';
 import { ErrorLogPanel } from './components/ErrorLogPanel';
 import { SearchOverlay } from './components/SearchOverlay';
@@ -23,6 +23,7 @@ import { PrioritiesPage } from './pages/PrioritiesPage';
 import { SlackPage } from './pages/SlackPage';
 import { NotionPage } from './pages/NotionPage';
 import { EmailPage } from './pages/EmailPage';
+import { RampPage } from './pages/RampPage';
 import { HelpPage } from './pages/HelpPage';
 import './styles/tufte.css';
 
@@ -39,6 +40,7 @@ function AppContent() {
   const location = useLocation();
   const navigate = useNavigate();
   const sync = useSync();
+  const isFetching = useIsFetching();
   const [searchOpen, setSearchOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const isClaudePage = location.pathname === '/claude';
@@ -73,6 +75,7 @@ function AppContent() {
             <Route path="/email" element={<EmailPage />} />
             <Route path="/slack" element={<SlackPage />} />
             <Route path="/notion" element={<NotionPage />} />
+            <Route path="/ramp" element={<RampPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/claude" element={null} />
           </Routes>
@@ -89,6 +92,13 @@ function AppContent() {
       />
       <KeyboardHelp isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
       <UndoToast />
+      {isFetching > 0 && (
+        <div className="global-fetch-indicator" aria-label="Loading data">
+          <svg width="14" height="14" viewBox="0 0 14 14">
+            <circle cx="7" cy="7" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="20 14" />
+          </svg>
+        </div>
+      )}
     </>
   );
 }

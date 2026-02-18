@@ -1,4 +1,4 @@
-.PHONY: start stop restart backend frontend status logs app build dev run test test-headed test-setup
+.PHONY: start stop restart backend frontend status logs app build dev run test test-headed test-setup lint fmt db-migrate db-upgrade db-downgrade db-current db-history db-revision
 
 BACKEND_DIR = app/backend
 FRONTEND_DIR = app/frontend
@@ -62,6 +62,22 @@ logs:
 	@echo ""
 	@echo "=== Frontend ===" && tail -20 /tmp/dashboard-frontend.log 2>/dev/null || echo "No frontend logs"
 
+# --- Lint & Format ---
+
+lint:
+	@echo "=== Python (ruff) ==="
+	@cd $(BACKEND_DIR) && source venv/bin/activate && ruff check . && ruff format --check .
+	@echo ""
+	@echo "=== TypeScript (tsc + eslint) ==="
+	@cd $(FRONTEND_DIR) && npx tsc --noEmit && npx eslint .
+
+fmt:
+	@echo "=== Python (ruff) ==="
+	@cd $(BACKEND_DIR) && source venv/bin/activate && ruff check --fix . && ruff format .
+	@echo ""
+	@echo "=== TypeScript (eslint) ==="
+	@cd $(FRONTEND_DIR) && npx eslint --fix .
+
 # --- Tests (Playwright) ---
 
 test:
@@ -74,3 +90,29 @@ test-headed:
 
 test-setup:
 	@cd app/test && npm install && npx playwright install chromium
+
+# --- Database Migrations (Alembic) ---
+
+db-migrate: db-upgrade
+	@echo "Migrations applied successfully"
+
+db-upgrade:
+	@echo "Running database migrations..."
+	@cd $(BACKEND_DIR) && source venv/bin/activate && alembic upgrade head
+
+db-downgrade:
+	@echo "Rolling back last migration..."
+	@cd $(BACKEND_DIR) && source venv/bin/activate && alembic downgrade -1
+
+db-current:
+	@echo "Current database version:"
+	@cd $(BACKEND_DIR) && source venv/bin/activate && alembic current
+
+db-history:
+	@echo "Migration history:"
+	@cd $(BACKEND_DIR) && source venv/bin/activate && alembic history
+
+db-revision:
+	@echo "Creating new migration..."
+	@read -p "Enter migration message: " msg; \
+	cd $(BACKEND_DIR) && source venv/bin/activate && alembic revision -m "$$msg"

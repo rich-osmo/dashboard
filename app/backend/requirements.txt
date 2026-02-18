@@ -8,3 +8,5 @@ google-api-python-client==2.165.0
 slack-sdk==3.34.0
 httpx==0.28.0
 google-genai>=1.0.0
+ruff>=0.8.0
+alembic==1.14.0

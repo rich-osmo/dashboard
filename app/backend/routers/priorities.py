@@ -47,15 +47,17 @@ def _build_context(db) -> dict:
     emails_recent = []
     for msgs in thread_map.values():
         latest = msgs[0]
-        emails_recent.append({
-            "subject": latest["subject"],
-            "snippet": latest["snippet"],
-            "from_name": latest["from_name"],
-            "from_email": latest["from_email"],
-            "date": latest["date"],
-            "is_unread": any(m["is_unread"] for m in msgs),
-            "message_count": len(msgs),
-        })
+        emails_recent.append(
+            {
+                "subject": latest["subject"],
+                "snippet": latest["snippet"],
+                "from_name": latest["from_name"],
+                "from_email": latest["from_email"],
+                "date": latest["date"],
+                "is_unread": any(m["is_unread"] for m in msgs),
+                "message_count": len(msgs),
+            }
+        )
 
     slack_recent = [
         dict(r)
@@ -153,9 +155,7 @@ def _call_gemini(context: dict, dismissed_titles: list[str]) -> list[dict]:
 
 def _get_cached(db) -> list[dict] | None:
     """Return cached priorities, or None if cache is empty."""
-    rows = db.execute(
-        "SELECT title, reason, source, urgency FROM cached_priorities ORDER BY id"
-    ).fetchall()
+    rows = db.execute("SELECT title, reason, source, urgency FROM cached_priorities ORDER BY id").fetchall()
     if not rows:
         return None
     return [dict(r) for r in rows]
@@ -177,10 +177,7 @@ def get_priorities(refresh: bool = Query(False)):
     db = get_db()
 
     # Load dismissed titles
-    dismissed = {
-        r["title"]
-        for r in db.execute("SELECT title FROM dismissed_priorities").fetchall()
-    }
+    dismissed = {r["title"] for r in db.execute("SELECT title FROM dismissed_priorities").fetchall()}
 
     if not refresh:
         cached = _get_cached(db)

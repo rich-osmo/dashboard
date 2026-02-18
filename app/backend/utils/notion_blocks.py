@@ -41,10 +41,7 @@ def blocks_to_text(blocks: list, depth: int = 0) -> str:
             lines.append(f"{indent}---")
         elif btype == "table_row":
             cells = data.get("cells", [])
-            row = " | ".join(
-                "".join(rt.get("plain_text", "") for rt in cell)
-                for cell in cells
-            )
+            row = " | ".join("".join(rt.get("plain_text", "") for rt in cell) for cell in cells)
             lines.append(f"{indent}| {row} |")
         elif btype == "child_page":
             lines.append(f"{indent}[Page: {data.get('title', '')}]")

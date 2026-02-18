@@ -232,6 +232,7 @@ export interface AuthStatus {
   notion: ServiceAuthStatus;
   granola: ServiceAuthStatus;
   github: ServiceAuthStatus;
+  ramp: ServiceAuthStatus;
 }
 
 export interface NewsItem {
@@ -403,6 +404,25 @@ export interface DashboardData {
   sync_status: Record<string, any>;
 }
 
+export interface PrioritizedNewsItem {
+  id: string;
+  title: string;
+  url: string | null;
+  source: 'slack' | 'email' | 'web';
+  source_detail: string | null;
+  domain: string | null;
+  snippet: string | null;
+  published_at: string | null;
+  found_at: string;
+  priority_score: number;
+  priority_reason: string;
+}
+
+export interface PrioritizedNewsData {
+  items: PrioritizedNewsItem[];
+  error?: string;
+}
+
 export interface PrioritizedSlackMessage {
   id: string;
   user_name: string;
@@ -475,4 +495,49 @@ export interface PrioritizedNotionPage {
 export interface PrioritizedNotionData {
   items: PrioritizedNotionPage[];
   error?: string;
+}
+
+export interface RampTransaction {
+  id: string;
+  amount: number;
+  currency: string;
+  merchant_name: string;
+  category: string;
+  transaction_date: string;
+  cardholder_name: string;
+  cardholder_email: string;
+  memo: string | null;
+  status: string;
+  ramp_url: string | null;
+  priority_score: number;
+  priority_reason: string;
+}
+
+export interface RampData {
+  items: RampTransaction[];
+  total_amount: number;
+  error?: string;
+}
+
+// --- Claude Sessions ---
+
+export interface ClaudeSession {
+  id: number;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  preview: string;
+  summary: string;
+  size_bytes: number;
+}
+
+export interface ClaudeSessionContent {
+  id: number;
+  raw_output: string;
+  plain_text: string;
+  summary: string;
+  metadata: {
+    rows: number;
+    cols: number;
+  };
 }

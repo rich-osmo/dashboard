@@ -7,7 +7,7 @@ interface UndoEntry {
 
 const MAX_STACK = 20;
 let stack: UndoEntry[] = [];
-let listeners = new Set<() => void>();
+const listeners = new Set<() => void>();
 
 function notify() {
   listeners.forEach((fn) => fn());

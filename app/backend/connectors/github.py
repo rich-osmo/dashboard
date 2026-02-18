@@ -1,11 +1,12 @@
 """GitHub REST API connector for PR sync from osmoai/osmo."""
+
 import json
 import subprocess
 
 import httpx
 
+from config import GITHUB_PR_SYNC_LIMIT, GITHUB_REPO
 from database import get_db
-from config import GITHUB_REPO, GITHUB_PR_SYNC_LIMIT
 
 GITHUB_API_BASE = "https://api.github.com"
 
@@ -19,7 +20,9 @@ def _get_token() -> str:
         return _cached_token
     result = subprocess.run(
         ["gh", "auth", "token"],
-        capture_output=True, text=True, timeout=5,
+        capture_output=True,
+        text=True,
+        timeout=5,
     )
     if result.returncode != 0:
         raise ValueError(f"gh auth token failed: {result.stderr.strip()}")

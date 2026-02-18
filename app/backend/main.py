@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent / ".env")
@@ -9,18 +10,38 @@ load_dotenv(Path(__file__).parent / ".env")
 if not os.environ.get("SSL_CERT_FILE"):
     try:
         import certifi
+
         os.environ["SSL_CERT_FILE"] = certifi.where()
     except ImportError:
         pass
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+
 from database import init_db
-from routers import employees, notes, dashboard, sync, auth, news, priorities, claude
-from routers import gmail, calendar_api, slack_api, notion_api, github_api, search, meetings, issues
-from routers.sync import sync_meeting_files, sync_granola
+from routers import (
+    auth,
+    calendar_api,
+    claude,
+    claude_sessions,
+    dashboard,
+    employees,
+    github_api,
+    gmail,
+    issues,
+    meetings,
+    news,
+    notes,
+    notion_api,
+    priorities,
+    ramp_api,
+    search,
+    slack_api,
+    sync,
+)
+from routers.sync import sync_granola, sync_meeting_files
 from utils.employee_matching import rebuild_from_db
 
 app = FastAPI(title="Rich's Dashboard")
@@ -41,11 +62,13 @@ app.include_router(auth.router)
 app.include_router(news.router)
 app.include_router(priorities.router)
 app.include_router(claude.router)
+app.include_router(claude_sessions.router)
 app.include_router(gmail.router)
 app.include_router(calendar_api.router)
 app.include_router(slack_api.router)
 app.include_router(notion_api.router)
 app.include_router(github_api.router)
+app.include_router(ramp_api.router)
 app.include_router(search.router)
 app.include_router(meetings.router)
 app.include_router(issues.router)
@@ -60,6 +83,7 @@ def health():
 def open_url(body: dict):
     """Open a URL in the system default browser (used by pywebview native app)."""
     import webbrowser
+
     url = body.get("url", "")
     if url and (url.startswith("http://") or url.startswith("https://")):
         webbrowser.open(url)
@@ -88,8 +112,12 @@ def restart():
 
 @app.on_event("startup")
 def startup():
+    """Run database migrations and sync data on startup."""
+    # Run migrations first to ensure schema is up to date
     init_db()
+    # Rebuild employee matching cache from database
     rebuild_from_db()
+    # Sync markdown meeting files and Granola notes
     sync_meeting_files()
     sync_granola()
 
@@ -103,6 +131,7 @@ if DIST_DIR.exists():
     def serve_spa(path: str):
         if path.startswith("api/"):
             from fastapi.responses import JSONResponse
+
             return JSONResponse({"error": "not found"}, status_code=404)
         file = DIST_DIR / path
         if file.is_file():

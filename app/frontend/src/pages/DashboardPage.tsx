@@ -1,8 +1,12 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useDashboard, usePriorities, useRefreshPriorities, useDismissPriority, useDismissDashboardItem } from '../api/hooks';
 import { TimeAgo } from '../components/shared/TimeAgo';
 import { NewsFeed } from '../components/NewsFeed';
 import { EmailThreadModal } from '../components/EmailThreadModal';
+import { cleanSlackText } from '../utils/cleanSlackText';
+import { useFocusNavigation } from '../hooks/useFocusNavigation';
+import { KeyboardHints } from '../components/shared/KeyboardHints';
+import type { Email, SlackMessage, GitHubPullRequest, NotionPage } from '../api/types';
 
 const SOURCE_LABELS: Record<string, string> = {
   slack: 'Slack',
@@ -49,6 +53,15 @@ export function DashboardPage() {
   const dismissPriority = useDismissPriority();
   const dismissItem = useDismissDashboardItem();
   const [selectedThread, setSelectedThread] = useState<{ threadId: string; subject: string } | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  const toggleExpand = useCallback((id: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
 
   const handleDismiss = (title: string, reason: 'done' | 'ignored') => {
     dismissPriority.mutate({ title, reason });
@@ -58,10 +71,66 @@ export function DashboardPage() {
     refreshPriorities.mutate();
   };
 
+  // Create unified item list for keyboard navigation
+  type DashboardItem =
+    | { type: 'email'; id: string; data: Email }
+    | { type: 'slack'; id: string; data: SlackMessage }
+    | { type: 'github'; id: string; data: GitHubPullRequest }
+    | { type: 'notion'; id: string; data: NotionPage };
+
+  const allItems: DashboardItem[] = [];
+  if (data) {
+    data.emails_recent?.forEach(email => allItems.push({ type: 'email', id: `email-${email.id}`, data: email }));
+    data.slack_recent?.forEach(msg => allItems.push({ type: 'slack', id: `slack-${msg.id}`, data: msg }));
+    data.github_review_requests?.forEach(pr => allItems.push({ type: 'github', id: `gh-${pr.number}`, data: pr }));
+    data.notion_recent?.forEach(page => allItems.push({ type: 'notion', id: `notion-${page.id}`, data: page }));
+  }
+
+  const handleExpandAtIndex = (index: number) => {
+    const item = allItems[index];
+    if (item) toggleExpand(item.id);
+  };
+
+  const handleDismissAtIndex = (index: number) => {
+    const item = allItems[index];
+    if (!item) return;
+
+    if (item.type === 'email') {
+      dismissItem.mutate({ source: 'email', item_id: item.data.thread_id || item.data.id });
+    } else if (item.type === 'slack') {
+      dismissItem.mutate({ source: 'slack', item_id: item.data.id });
+    } else if (item.type === 'github') {
+      dismissItem.mutate({ source: 'github', item_id: String(item.data.number) });
+    } else if (item.type === 'notion') {
+      dismissItem.mutate({ source: 'notion', item_id: item.data.id });
+    }
+  };
+
+  const handleOpenAtIndex = (index: number) => {
+    const item = allItems[index];
+    if (!item) return;
+
+    if (item.type === 'email') {
+      setSelectedThread({
+        threadId: item.data.thread_id || item.data.id,
+        subject: item.data.subject,
+      });
+    }
+    // For other types (slack, github, notion), the default click behavior will work (links)
+  };
+
+  const { containerRef } = useFocusNavigation({
+    selector: '.dashboard-item-row',
+    enabled: !isLoading,
+    onExpand: handleExpandAtIndex,
+    onDismiss: handleDismissAtIndex,
+    onOpen: handleOpenAtIndex,
+  });
+
   if (isLoading) return <p className="empty-state">Loading...</p>;
 
   return (
-    <div>
+    <div ref={containerRef}>
       <h1>Today</h1>
 
       <div id="priorities" className="priorities-section">
@@ -160,33 +229,49 @@ export function DashboardPage() {
           {data?.emails_recent.length === 0 && (
             <p className="empty-state">No recent emails</p>
           )}
-          {data?.emails_recent.map((email) => (
-            <div key={email.id} className="dashboard-item-row">
-              <div
-                className="dashboard-item dashboard-item-link"
-                style={{ cursor: 'pointer' }}
-                onClick={() => setSelectedThread({
-                  threadId: email.thread_id || email.id,
-                  subject: email.subject,
-                })}
-              >
-                <div>
-                  <span className="dashboard-item-title">
-                    {email.is_unread && <strong>{'\u2022'} </strong>}
-                    {email.subject}
-                    {(email.message_count ?? 0) > 1 && (
-                      <span className="email-thread-count">({email.message_count})</span>
-                    )}
-                  </span>
+          {data?.emails_recent.map((email) => {
+            const isExpanded = expandedIds.has(`email-${email.id}`);
+            const hasSnippet = !!email.snippet;
+            return (
+              <div key={email.id} className="dashboard-item-row">
+                <div
+                  className="dashboard-item dashboard-item-link"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => setSelectedThread({
+                    threadId: email.thread_id || email.id,
+                    subject: email.subject,
+                  })}
+                >
+                  <div>
+                    <span className="dashboard-item-title">
+                      {email.is_unread && <strong>{'\u2022'} </strong>}
+                      {email.subject}
+                      {(email.message_count ?? 0) > 1 && (
+                        <span className="email-thread-count">({email.message_count})</span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="dashboard-item-meta">
+                    {email.from_name || email.from_email} &middot;{' '}
+                    <TimeAgo date={email.date} />
+                  </div>
+                  {isExpanded && hasSnippet && (
+                    <div className="dashboard-item-expanded">{email.snippet}</div>
+                  )}
                 </div>
-                <div className="dashboard-item-meta">
-                  {email.from_name || email.from_email} &middot;{' '}
-                  <TimeAgo date={email.date} />
-                </div>
+                {hasSnippet && (
+                  <button
+                    className="dashboard-expand-btn"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleExpand(`email-${email.id}`); }}
+                    title={isExpanded ? 'Collapse (e)' : 'Expand (e)'}
+                  >
+                    {isExpanded ? '\u25BE' : '\u25B8'}
+                  </button>
+                )}
+                <DismissBtn onClick={() => dismissItem.mutate({ source: 'email', item_id: email.thread_id || email.id })} />
               </div>
-              <DismissBtn onClick={() => dismissItem.mutate({ source: 'email', item_id: email.thread_id || email.id })} />
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="dashboard-card">
@@ -198,11 +283,18 @@ export function DashboardPage() {
             <p className="empty-state">No recent Slack messages</p>
           )}
           {data?.slack_recent.map((msg) => {
+            const cleaned = cleanSlackText(msg.text);
+            const isExpanded = expandedIds.has(`slack-${msg.id}`);
+            const isLong = cleaned.length > 120;
             const inner = (
               <>
                 <div className="dashboard-item-title">
-                  {msg.text.slice(0, 120)}
-                  {msg.text.length > 120 && '...'}
+                  {isExpanded ? cleaned : (
+                    <>
+                      {cleaned.slice(0, 120)}
+                      {isLong && '...'}
+                    </>
+                  )}
                 </div>
                 <div className="dashboard-item-meta">
                   {msg.user_name} in {msg.channel_name || 'DM'}
@@ -225,6 +317,15 @@ export function DashboardPage() {
                     {inner}
                   </div>
                 )}
+                {isLong && (
+                  <button
+                    className="dashboard-expand-btn"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleExpand(`slack-${msg.id}`); }}
+                    title={isExpanded ? 'Collapse (e)' : 'Expand (e)'}
+                  >
+                    {isExpanded ? '\u25BE' : '\u25B8'}
+                  </button>
+                )}
                 <DismissBtn onClick={() => dismissItem.mutate({ source: 'slack', item_id: msg.id })} />
               </div>
             );
@@ -239,25 +340,41 @@ export function DashboardPage() {
           {(!data?.github_review_requests || data.github_review_requests.length === 0) && (
             <p className="empty-state">No pending review requests</p>
           )}
-          {data?.github_review_requests?.map((pr) => (
-            <div key={pr.number} className="dashboard-item-row">
-              <a
-                className="dashboard-item dashboard-item-link"
-                href={pr.html_url}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <div className="dashboard-item-title">
-                  <span className="github-pr-number">#{pr.number}</span>{' '}
-                  {pr.title}
-                </div>
-                <div className="dashboard-item-meta">
-                  {pr.author} &middot; <TimeAgo date={pr.updated_at} />
-                </div>
-              </a>
-              <DismissBtn onClick={() => dismissItem.mutate({ source: 'github', item_id: String(pr.number) })} />
-            </div>
-          ))}
+          {data?.github_review_requests?.map((pr) => {
+            const isExpanded = expandedIds.has(`gh-${pr.number}`);
+            return (
+              <div key={pr.number} className="dashboard-item-row">
+                <a
+                  className="dashboard-item dashboard-item-link"
+                  href={pr.html_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <div className="dashboard-item-title">
+                    <span className="github-pr-number">#{pr.number}</span>{' '}
+                    {pr.title}
+                  </div>
+                  <div className="dashboard-item-meta">
+                    {pr.author} &middot; <TimeAgo date={pr.updated_at} />
+                  </div>
+                  {isExpanded && (
+                    <div className="dashboard-item-expanded">
+                      {pr.head_ref} &rarr; {pr.base_ref}
+                      {pr.labels.length > 0 && <span> &middot; {pr.labels.join(', ')}</span>}
+                    </div>
+                  )}
+                </a>
+                <button
+                  className="dashboard-expand-btn"
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleExpand(`gh-${pr.number}`); }}
+                  title={isExpanded ? 'Collapse (e)' : 'Expand (e)'}
+                >
+                  {isExpanded ? '\u25BE' : '\u25B8'}
+                </button>
+                <DismissBtn onClick={() => dismissItem.mutate({ source: 'github', item_id: String(pr.number) })} />
+              </div>
+            );
+          })}
         </div>
 
         <div className="dashboard-card">
@@ -268,25 +385,44 @@ export function DashboardPage() {
           {data?.notion_recent.length === 0 && (
             <p className="empty-state">No recent Notion pages</p>
           )}
-          {data?.notion_recent.map((page) => (
-            <div key={page.id} className="dashboard-item-row">
-              <a
-                className="dashboard-item dashboard-item-link"
-                href={page.url}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <span className="dashboard-item-title">{page.title}</span>
-                <div className="dashboard-item-meta">
-                  {page.relevance_reason && (
-                    <span>{page.relevance_reason} &middot; </span>
+          {data?.notion_recent.map((page) => {
+            const isExpanded = expandedIds.has(`notion-${page.id}`);
+            const hasExtra = !!(page.snippet || page.relevance_reason);
+            return (
+              <div key={page.id} className="dashboard-item-row">
+                <a
+                  className="dashboard-item dashboard-item-link"
+                  href={page.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <span className="dashboard-item-title">{page.title}</span>
+                  <div className="dashboard-item-meta">
+                    {!isExpanded && page.relevance_reason && (
+                      <span>{page.relevance_reason} &middot; </span>
+                    )}
+                    <TimeAgo date={page.last_edited_time} />
+                  </div>
+                  {isExpanded && (
+                    <div className="dashboard-item-expanded">
+                      {page.snippet && <div>{page.snippet}</div>}
+                      {page.relevance_reason && <div style={{ fontStyle: 'italic' }}>{page.relevance_reason}</div>}
+                    </div>
                   )}
-                  <TimeAgo date={page.last_edited_time} />
-                </div>
-              </a>
-              <DismissBtn onClick={() => dismissItem.mutate({ source: 'notion', item_id: page.id })} />
-            </div>
-          ))}
+                </a>
+                {hasExtra && (
+                  <button
+                    className="dashboard-expand-btn"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleExpand(`notion-${page.id}`); }}
+                    title={isExpanded ? 'Collapse (e)' : 'Expand (e)'}
+                  >
+                    {isExpanded ? '\u25BE' : '\u25B8'}
+                  </button>
+                )}
+                <DismissBtn onClick={() => dismissItem.mutate({ source: 'notion', item_id: page.id })} />
+              </div>
+            );
+          })}
         </div>
 
         <div className="dashboard-card">
@@ -308,6 +444,10 @@ export function DashboardPage() {
           subject={selectedThread.subject}
           onClose={() => setSelectedThread(null)}
         />
+      )}
+
+      {allItems.length > 0 && (
+        <KeyboardHints hints={['j/k navigate', 'Enter open', 'e expand', 'd dismiss']} />
       )}
     </div>
   );

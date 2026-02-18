@@ -6,16 +6,18 @@ interface UseFocusNavigationOptions {
   onDismiss?: (index: number) => void;
   onOpen?: (index: number) => void;
   onCreateIssue?: (index: number) => void;
+  onExpand?: (index: number) => void;
+  onToggleFilter?: () => void;
 }
 
-export function useFocusNavigation({ selector, enabled = true, onDismiss, onOpen, onCreateIssue }: UseFocusNavigationOptions) {
+export function useFocusNavigation({ selector, enabled = true, onDismiss, onOpen, onCreateIssue, onExpand, onToggleFilter }: UseFocusNavigationOptions) {
   const [focusIndex, setFocusIndex] = useState(-1);
   const containerRef = useRef<HTMLDivElement>(null);
   const focusIndexRef = useRef(focusIndex);
   focusIndexRef.current = focusIndex;
 
-  const callbacksRef = useRef({ onDismiss, onOpen, onCreateIssue });
-  callbacksRef.current = { onDismiss, onOpen, onCreateIssue };
+  const callbacksRef = useRef({ onDismiss, onOpen, onCreateIssue, onExpand, onToggleFilter });
+  callbacksRef.current = { onDismiss, onOpen, onCreateIssue, onExpand, onToggleFilter };
 
   const getItems = useCallback(() => {
     if (!containerRef.current) return [];
@@ -106,6 +108,17 @@ export function useFocusNavigation({ selector, enabled = true, onDismiss, onOpen
           // Flash the item to confirm
           items[idx].classList.add('issue-created-flash');
           setTimeout(() => items[idx]?.classList.remove('issue-created-flash'), 600);
+        }
+      } else if (e.key === 'e') {
+        const idx = focusIndexRef.current;
+        if (idx >= 0 && idx < items.length && callbacksRef.current.onExpand) {
+          e.preventDefault();
+          callbacksRef.current.onExpand(idx);
+        }
+      } else if (e.key === 'f') {
+        if (callbacksRef.current.onToggleFilter) {
+          e.preventDefault();
+          callbacksRef.current.onToggleFilter();
         }
       }
     };

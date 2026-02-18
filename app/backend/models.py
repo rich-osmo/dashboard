@@ -1,5 +1,6 @@
-from pydantic import BaseModel
 from typing import Optional
+
+from pydantic import BaseModel
 
 
 class NoteCreate(BaseModel):
@@ -76,3 +77,15 @@ class MeetingNoteUpsert(BaseModel):
 
 class SyncRequest(BaseModel):
     sources: Optional[list[str]] = None  # None = sync all
+
+
+class ClaudeSessionCreate(BaseModel):
+    title: str = "Untitled Session"
+    content: str  # base64-encoded serialized terminal output
+    plain_text: str = ""
+    rows: int = 24
+    cols: int = 80
+
+
+class ClaudeSessionUpdate(BaseModel):
+    title: Optional[str] = None

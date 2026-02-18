@@ -1,10 +1,12 @@
 """Google Gmail API connector."""
-import base64
+
 import json
+
 from googleapiclient.discovery import build
+
+from config import GMAIL_MAX_RESULTS
 from connectors.google_auth import get_google_credentials
 from database import get_db
-from config import GMAIL_MAX_RESULTS
 
 
 def sync_gmail_messages() -> int:
@@ -12,12 +14,7 @@ def sync_gmail_messages() -> int:
     service = build("gmail", "v1", credentials=creds)
 
     # Get recent inbox messages
-    results = (
-        service.users()
-        .messages()
-        .list(userId="me", maxResults=GMAIL_MAX_RESULTS, labelIds=["INBOX"])
-        .execute()
-    )
+    results = service.users().messages().list(userId="me", maxResults=GMAIL_MAX_RESULTS, labelIds=["INBOX"]).execute()
 
     messages = results.get("messages", [])
     if not messages:
@@ -31,8 +28,7 @@ def sync_gmail_messages() -> int:
         msg = (
             service.users()
             .messages()
-            .get(userId="me", id=msg_ref["id"], format="metadata",
-                 metadataHeaders=["From", "To", "Subject", "Date"])
+            .get(userId="me", id=msg_ref["id"], format="metadata", metadataHeaders=["From", "To", "Subject", "Date"])
             .execute()
         )
 

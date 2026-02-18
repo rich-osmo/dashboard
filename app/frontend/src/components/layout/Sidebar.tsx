@@ -96,6 +96,7 @@ export function Sidebar() {
           <NavLink to="/github">GitHub</NavLink>
           <NavLink to="/slack">Slack</NavLink>
           <NavLink to="/notion">Notion</NavLink>
+          <NavLink to="/ramp">Ramp</NavLink>
         </nav>
 
         <div className="sidebar-section-label">tools</div>

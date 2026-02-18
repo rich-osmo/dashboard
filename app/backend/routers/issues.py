@@ -1,9 +1,11 @@
 import re
-from fastapi import APIRouter, HTTPException, Query
+from datetime import datetime
 from typing import Optional
+
+from fastapi import APIRouter, HTTPException, Query
+
 from database import get_db, rebuild_fts_table
 from models import IssueCreate, IssueUpdate
-from datetime import datetime
 
 router = APIRouter(prefix="/api/issues", tags=["issues"])
 
@@ -39,8 +41,7 @@ def _resolve_mentions(text: str, db) -> list[str]:
 
 def _get_issue_employees(db, issue_id: int) -> list[dict]:
     rows = db.execute(
-        "SELECT e.id, e.name FROM issue_employees ie "
-        "JOIN employees e ON ie.employee_id = e.id WHERE ie.issue_id = ?",
+        "SELECT e.id, e.name FROM issue_employees ie JOIN employees e ON ie.employee_id = e.id WHERE ie.issue_id = ?",
         (issue_id,),
     ).fetchall()
     return [{"id": r["id"], "name": r["name"]} for r in rows]
@@ -67,25 +68,23 @@ def _get_issue_meetings(db, issue_id: int) -> list[dict]:
         summary = ""
         start_time = None
         if ref_type == "calendar":
-            ev = db.execute(
-                "SELECT summary, start_time FROM calendar_events WHERE id = ?", (ref_id,)
-            ).fetchone()
+            ev = db.execute("SELECT summary, start_time FROM calendar_events WHERE id = ?", (ref_id,)).fetchone()
             if ev:
                 summary = ev["summary"] or ""
                 start_time = ev["start_time"]
         elif ref_type == "granola":
-            gm = db.execute(
-                "SELECT title, created_at FROM granola_meetings WHERE id = ?", (ref_id,)
-            ).fetchone()
+            gm = db.execute("SELECT title, created_at FROM granola_meetings WHERE id = ?", (ref_id,)).fetchone()
             if gm:
                 summary = gm["title"] or ""
                 start_time = gm["created_at"]
-        meetings.append({
-            "ref_type": ref_type,
-            "ref_id": ref_id,
-            "summary": summary,
-            "start_time": start_time,
-        })
+        meetings.append(
+            {
+                "ref_type": ref_type,
+                "ref_id": ref_id,
+                "summary": summary,
+                "start_time": start_time,
+            }
+        )
     return meetings
 
 
@@ -119,9 +118,7 @@ def list_issues(
 
     if employee_id:
         query = (
-            "SELECT DISTINCT i.* FROM issues i "
-            "JOIN issue_employees ie ON i.id = ie.issue_id "
-            "WHERE ie.employee_id = ?"
+            "SELECT DISTINCT i.* FROM issues i JOIN issue_employees ie ON i.id = ie.issue_id WHERE ie.employee_id = ?"
         )
         params: list = [employee_id]
     else:
@@ -138,7 +135,10 @@ def list_issues(
         query += " AND i.tshirt_size = ?"
         params.append(tshirt_size)
 
-    query += " ORDER BY CASE i.status WHEN 'open' THEN 0 WHEN 'in_progress' THEN 1 ELSE 2 END, i.priority ASC, i.updated_at DESC"
+    query += (
+        " ORDER BY CASE i.status WHEN 'open' THEN 0 WHEN 'in_progress' THEN 1 ELSE 2 END,"
+        " i.priority ASC, i.updated_at DESC"
+    )
 
     rows = db.execute(query, params).fetchall()
     result = [_issue_to_dict(db, r) for r in rows]
@@ -180,7 +180,8 @@ def create_issue(issue: IssueCreate):
             ref_id = m.get("ref_id", "")
             if ref_type and ref_id:
                 db.execute(
-                    "INSERT OR IGNORE INTO issue_meetings (issue_id, meeting_ref_type, meeting_ref_id) VALUES (?, ?, ?)",
+                    "INSERT OR IGNORE INTO issue_meetings "
+                    "(issue_id, meeting_ref_type, meeting_ref_id) VALUES (?, ?, ?)",
                     (issue_id, ref_type, ref_id),
                 )
 
@@ -207,25 +208,30 @@ def search_meetings(
         (pattern, limit),
     ).fetchall()
     for r in cal_rows:
-        results.append({
-            "ref_type": "calendar",
-            "ref_id": r["id"],
-            "summary": r["summary"] or "",
-            "start_time": r["start_time"],
-        })
+        results.append(
+            {
+                "ref_type": "calendar",
+                "ref_id": r["id"],
+                "summary": r["summary"] or "",
+                "start_time": r["start_time"],
+            }
+        )
 
     # Search granola meetings
     gran_rows = db.execute(
-        "SELECT id, title, created_at FROM granola_meetings WHERE title LIKE ? AND valid_meeting = 1 ORDER BY created_at DESC LIMIT ?",
+        "SELECT id, title, created_at FROM granola_meetings "
+        "WHERE title LIKE ? AND valid_meeting = 1 ORDER BY created_at DESC LIMIT ?",
         (pattern, limit),
     ).fetchall()
     for r in gran_rows:
-        results.append({
-            "ref_type": "granola",
-            "ref_id": r["id"],
-            "summary": r["title"] or "",
-            "start_time": r["created_at"],
-        })
+        results.append(
+            {
+                "ref_type": "granola",
+                "ref_id": r["id"],
+                "summary": r["title"] or "",
+                "start_time": r["created_at"],
+            }
+        )
 
     db.close()
     return results

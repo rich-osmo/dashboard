@@ -1,7 +1,8 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useGitHubPulls, useGitHubSearch, useGitHubCodeSearch, useDismissPrioritizedItem, useCreateIssue } from '../api/hooks';
 import { TimeAgo } from '../components/shared/TimeAgo';
 import { useFocusNavigation } from '../hooks/useFocusNavigation';
+import { KeyboardHints } from '../components/shared/KeyboardHints';
 
 type Tab = 'reviews' | 'open' | 'search';
 type SearchMode = 'prs' | 'code';
@@ -13,6 +14,15 @@ export function GitHubPage() {
   const [submittedQuery, setSubmittedQuery] = useState('');
   const dismiss = useDismissPrioritizedItem();
   const createIssue = useCreateIssue();
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+
+  const toggleExpand = useCallback((id: number) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
 
   const reviewPulls = useGitHubPulls({ review_requested: true });
   const openPulls = useGitHubPulls({ state: 'open' });
@@ -30,6 +40,7 @@ export function GitHubPage() {
     enabled: tab !== 'search',
     onDismiss: (i) => { if (activePulls[i]) dismiss.mutate({ source: 'github', item_id: String(activePulls[i].number) }); },
     onCreateIssue: (i) => { if (activePulls[i]) createIssue.mutate({ title: activePulls[i].title }); },
+    onExpand: (i) => { if (activePulls[i]) toggleExpand(activePulls[i].number); },
   });
 
   const handleSearch = (e: React.FormEvent) => {
@@ -78,7 +89,7 @@ export function GitHubPage() {
             <p className="empty-state">No pending review requests</p>
           )}
           {reviewPulls.data?.pulls.map((pr) => (
-            <PullRequestRow key={pr.number} pr={pr} onDismiss={() => dismiss.mutate({ source: 'github', item_id: String(pr.number) })} />
+            <PullRequestRow key={pr.number} pr={pr} expanded={expandedIds.has(pr.number)} onToggleExpand={() => toggleExpand(pr.number)} onDismiss={() => dismiss.mutate({ source: 'github', item_id: String(pr.number) })} />
           ))}
         </div>
       )}
@@ -90,7 +101,7 @@ export function GitHubPage() {
             <p className="empty-state">No open PRs</p>
           )}
           {openPulls.data?.pulls.map((pr) => (
-            <PullRequestRow key={pr.number} pr={pr} onDismiss={() => dismiss.mutate({ source: 'github', item_id: String(pr.number) })} />
+            <PullRequestRow key={pr.number} pr={pr} expanded={expandedIds.has(pr.number)} onToggleExpand={() => toggleExpand(pr.number)} onDismiss={() => dismiss.mutate({ source: 'github', item_id: String(pr.number) })} />
           ))}
         </div>
       )}
@@ -181,12 +192,18 @@ export function GitHubPage() {
           )}
         </div>
       )}
+
+      {(tab === 'reviews' && reviewPulls.data?.pulls.length || tab === 'open' && openPulls.data?.pulls.length) ? (
+        <KeyboardHints hints={['j/k navigate', 'Enter open', 'e expand', 'd dismiss', 'i create issue']} />
+      ) : null}
     </div>
   );
 }
 
-function PullRequestRow({ pr, onDismiss }: {
-  pr: { number: number; title: string; state: string; draft: boolean; author: string; html_url: string; updated_at: string; head_ref: string; labels: string[] };
+function PullRequestRow({ pr, expanded, onToggleExpand, onDismiss }: {
+  pr: { number: number; title: string; state: string; draft: boolean; author: string; html_url: string; updated_at: string; head_ref: string; base_ref: string; labels: string[]; requested_reviewers: string[] };
+  expanded: boolean;
+  onToggleExpand: () => void;
   onDismiss: () => void;
 }) {
   return (
@@ -210,7 +227,22 @@ function PullRequestRow({ pr, onDismiss }: {
           {pr.author} &middot; {pr.head_ref} &middot;{' '}
           <TimeAgo date={pr.updated_at} />
         </div>
+        {expanded && (
+          <div className="dashboard-item-expanded">
+            {pr.head_ref} &rarr; {pr.base_ref}
+            {pr.requested_reviewers.length > 0 && (
+              <span> &middot; reviewers: {pr.requested_reviewers.join(', ')}</span>
+            )}
+          </div>
+        )}
       </a>
+      <button
+        className="dashboard-expand-btn"
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleExpand(); }}
+        title={expanded ? 'Collapse (e)' : 'Expand (e)'}
+      >
+        {expanded ? '\u25BE' : '\u25B8'}
+      </button>
       <button
         className="dashboard-dismiss-btn"
         onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDismiss(); }}
