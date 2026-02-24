@@ -27,6 +27,7 @@ from connectors.registry import init_registry
 from database import init_db
 from routers import (
     auth,
+    briefing,
     calendar_api,
     claude,
     claude_sessions,
@@ -49,6 +50,7 @@ from routers import (
     sheets_api,
     slack_api,
     sync,
+    weather,
 )
 from routers.sync import sync_granola, sync_meeting_files
 from utils.person_matching import rebuild_from_db
@@ -107,6 +109,8 @@ app.include_router(meetings.router)
 app.include_router(issues.router)
 app.include_router(profile.router)
 app.include_router(personas.router)
+app.include_router(briefing.router)
+app.include_router(weather.router)
 
 
 @app.get("/api/health")

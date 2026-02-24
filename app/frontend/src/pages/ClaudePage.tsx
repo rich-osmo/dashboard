@@ -12,12 +12,15 @@ import {
   useCreateNoteFromSession,
   usePersonas,
 } from '../api/hooks';
+import { api } from '../api/client';
+import type { Issue } from '../api/types';
 
 interface Tab {
   id: string;
   label: string;
   personaId?: number;
   personaName?: string;
+  initialPrompt?: string;
 }
 
 function generateTitle(plainText: string): string {
@@ -56,6 +59,7 @@ export function ClaudePage({ visible, overlayOpen }: { visible: boolean; overlay
   const location = useLocation();
   const navigate = useNavigate();
   const [pendingPersonaId, setPendingPersonaId] = useState<number | null>(null);
+  const [pendingIssueId, setPendingIssueId] = useState<number | null>(null);
 
   // Parse query params reactively (ClaudePage is always mounted, so mount-only won't work)
   useEffect(() => {
@@ -77,6 +81,16 @@ export function ClaudePage({ visible, overlayOpen }: { visible: boolean; overlay
       const personaId = parseInt(personaParam, 10);
       if (!isNaN(personaId)) {
         setPendingPersonaId(personaId);
+      }
+      navigate('/claude', { replace: true });
+      return;
+    }
+
+    const issueParam = params.get('issue');
+    if (issueParam) {
+      const issueId = parseInt(issueParam, 10);
+      if (!isNaN(issueId)) {
+        setPendingIssueId(issueId);
       }
       navigate('/claude', { replace: true });
     }
@@ -105,6 +119,34 @@ export function ClaudePage({ visible, overlayOpen }: { visible: boolean; overlay
       return next;
     });
   }, [pendingPersonaId, personas]);
+
+  // Create tab when pending issue is set — fetch issue and build prompt
+  useEffect(() => {
+    if (pendingIssueId === null) return;
+    setPendingIssueId(null);
+
+    api.get<Issue>(`/issues/${pendingIssueId}`).then((issue) => {
+      let prompt = `I want to work on this issue:\n\nTitle: ${issue.title}`;
+      if (issue.description) prompt += `\nDescription: ${issue.description}`;
+      prompt += `\nPriority: P${issue.priority} | Size: ${issue.tshirt_size.toUpperCase()} | Status: ${issue.status}`;
+      if (issue.tags?.length) prompt += `\nTags: ${issue.tags.join(', ')}`;
+      if (issue.people?.length) prompt += `\nPeople: ${issue.people.map((p) => p.name).join(', ')}`;
+      prompt += `\n\nPlease help me think through and work on this issue.`;
+
+      tabCounterRef.current += 1;
+      const id = String(nextTabId++);
+      const label = `Issue: ${issue.title.slice(0, 30)}`;
+      setTabs((prev) => [...prev, { id, label, initialPrompt: prompt }]);
+      setActiveTabId(id);
+      setTabStatus((prev) => {
+        const next = new Map(prev);
+        next.set(id, 'connecting');
+        return next;
+      });
+    }).catch((err) => {
+      console.error('Failed to fetch issue for Claude:', err);
+    });
+  }, [pendingIssueId]);
 
   const updateTabStatus = useCallback((tabId: string, status: string) => {
     setTabStatus((prev) => {
@@ -167,6 +209,9 @@ export function ClaudePage({ visible, overlayOpen }: { visible: boolean; overlay
         const newIdx = Math.min(idx, next.length - 1);
         setActiveTabId(next[newIdx].id);
         setTimeout(() => terminalRefs.current.get(next[newIdx].id)?.focus(), 50);
+      } else {
+        // Refocus the active terminal — the close button stole focus
+        setTimeout(() => terminalRefs.current.get(activeTabId)?.focus(), 50);
       }
 
       setTabStatus((s) => {
@@ -327,23 +372,31 @@ export function ClaudePage({ visible, overlayOpen }: { visible: boolean; overlay
             </button>
           </div>
         ))}
-        <button
-          className="claude-tab-new"
-          onClick={() => addTabWithPersona()}
-          title="New session"
-        >
-          +
-        </button>
         <div className="claude-tab-new-wrapper" ref={personaPickerRef}>
           <button
-            className="claude-tab-persona-trigger"
+            className="claude-tab-new"
             onClick={() => setShowPersonaPicker(!showPersonaPicker)}
-            title="New session with persona"
+            title="New session"
           >
-            &#9662;
+            +
           </button>
           {showPersonaPicker && (
             <div className="claude-persona-picker">
+              <button
+                className="claude-persona-option"
+                onClick={() => addTabWithPersona()}
+              >
+                <span
+                  className="persona-avatar-placeholder"
+                  style={{ width: 28, height: 28, fontSize: 13 }}
+                >
+                  +
+                </span>
+                <span className="claude-persona-info">
+                  <span className="claude-persona-name">New Session</span>
+                  <span className="claude-persona-desc">Default assistant</span>
+                </span>
+              </button>
               {personas?.filter((p) => p.name !== 'Default').map((p) => (
                 <button
                   key={p.id}
@@ -432,6 +485,7 @@ export function ClaudePage({ visible, overlayOpen }: { visible: boolean; overlay
               visible={tab.id === activeTabId && !viewingSessionId && visible}
               overlayOpen={overlayOpen}
               personaId={tab.personaId}
+              initialPrompt={tab.initialPrompt}
               onConnected={() => updateTabStatus(tab.id, 'connected')}
               onDisconnected={() => updateTabStatus(tab.id, 'disconnected')}
             />

@@ -75,7 +75,8 @@ def sync_calendar_events() -> int:
             )
         )
 
-    # Phase 3: Write in batches
+    # Phase 3: Write in batches and remove deleted events
+    fetched_ids = {row[0] for row in rows}
     with get_write_db() as db:
         batch_upsert(
             db,
@@ -85,5 +86,23 @@ def sync_calendar_events() -> int:
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             rows,
         )
+
+        # Remove events that exist in the DB within the sync window but were
+        # not returned by the API (i.e. deleted/cancelled in Google Calendar)
+        if fetched_ids:
+            placeholders = ",".join("?" * len(fetched_ids))
+            db.execute(
+                f"""DELETE FROM calendar_events
+                    WHERE start_time >= ? AND start_time <= ?
+                      AND id NOT IN ({placeholders})""",
+                [time_min, time_max, *fetched_ids],
+            )
+        else:
+            # API returned zero events — clear everything in the window
+            db.execute(
+                """DELETE FROM calendar_events
+                   WHERE start_time >= ? AND start_time <= ?""",
+                [time_min, time_max],
+            )
 
     return len(events)

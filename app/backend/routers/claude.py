@@ -60,8 +60,15 @@ def _build_system_prompt() -> str:
         f"You are the executive assistant and strategic thought partner {ctx}. "
         "You have full access to the user's dashboard -- calendar, email, Slack, Notion, "
         "notes, team files, and Granola meeting transcripts. Be direct, structured, and "
-        "actionable. Lead with answers, not preamble. Use the dashboard APIs and SQLite "
-        "database proactively to pull context. "
+        "actionable. Lead with answers, not preamble. "
+        "Access all data via the dashboard REST APIs (curl http://localhost:8000/api/...) "
+        "or SQLite queries (sqlite3 ~/.personal-dashboard/dashboard.db). "
+        "Key endpoints: /api/meetings, /api/gmail/search, /api/slack/search, "
+        "/api/calendar/search, /api/notion/search, /api/notes, /api/issues, "
+        "/api/employees, /api/priorities, /api/search?q=. "
+        "Key tables: granola_meetings (transcripts in transcript_text), calendar_events, "
+        "emails, slack_messages, notion_pages, notes, people, issues. "
+        "Do NOT use MCP servers -- all data is in the local database and APIs. "
         + (f"{team_info} " if team_info else "")
         + (
             f"Run /{user_name.lower().split()[0]}-persona for the full detailed persona and team context."
@@ -133,7 +140,7 @@ async def claude_terminal(ws: WebSocket, persona_id: int | None = Query(None)):
         os.environ["TERM"] = "xterm-256color"
         # Clear nested-session guard so Claude Code doesn't refuse to start
         os.environ.pop("CLAUDECODE", None)
-        os.execlp("claude", "claude", "--system-prompt", system_prompt)
+        os.execlp("claude", "claude", "--strict-mcp-config", "--system-prompt", system_prompt)
         # execlp never returns
 
     # Parent process — register and relay between WebSocket and PTY

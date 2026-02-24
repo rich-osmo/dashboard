@@ -27,6 +27,7 @@ class ProfileUpdate(BaseModel):
     user_company_description: str | None = None
     user_email: str | None = None
     user_email_domain: str | None = None
+    user_location: str | None = None
     github_repo: str | None = None
     skip_domains: list[str] | None = None
     news_topics: list[str] | None = None

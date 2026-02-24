@@ -9,7 +9,7 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { UndoToast, getUndoTrigger } from './components/UndoToast';
 import { SyncProgressOverlay } from './components/SyncProgressOverlay';
 import { useSync, useSetupStatus } from './api/hooks';
-import { DashboardPage } from './pages/DashboardPage';
+import { BriefingPage } from './pages/BriefingPage';
 import { NotePage } from './pages/NotePage';
 import { PersonPage } from './pages/PersonPage';
 import { OrgTreePage } from './pages/OrgTreePage';
@@ -47,7 +47,7 @@ function RootRedirect() {
   if (setupStatus && !setupStatus.setup_complete) {
     return <Navigate to="/setup" replace />;
   }
-  return <DashboardPage />;
+  return <BriefingPage />;
 }
 
 function AppContent() {

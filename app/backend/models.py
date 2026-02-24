@@ -86,6 +86,9 @@ class IssueCreate(BaseModel):
     tshirt_size: str = "m"
     person_ids: Optional[list[str]] = None
     meeting_ids: Optional[list[dict]] = None
+    project_id: Optional[int] = None
+    tags: Optional[list[str]] = None
+    due_date: Optional[str] = None
 
 
 class IssueUpdate(BaseModel):
@@ -96,6 +99,9 @@ class IssueUpdate(BaseModel):
     status: Optional[str] = None
     person_ids: Optional[list[str]] = None
     meeting_ids: Optional[list[dict]] = None
+    project_id: Optional[int] = None
+    tags: Optional[list[str]] = None
+    due_date: Optional[str] = None
 
 
 class MeetingNoteUpsert(BaseModel):

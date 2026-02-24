@@ -4,11 +4,19 @@ Uses Drive API files().export() (drive.readonly scope) instead of Docs API,
 so no additional OAuth scope is needed.
 """
 
+import logging
+
+import google_auth_httplib2
+import httplib2
 from googleapiclient.discovery import build
 
 from config import DOCS_SYNC_LIMIT
 from connectors.google_auth import get_google_credentials
 from database import batch_upsert, get_db_connection, get_write_db
+
+logger = logging.getLogger(__name__)
+
+API_TIMEOUT = 30  # seconds per HTTP request
 
 
 def sync_docs_data() -> int:
@@ -17,7 +25,8 @@ def sync_docs_data() -> int:
     Depends on drive.sync_drive_files() having already populated drive_files.
     """
     creds = get_google_credentials()
-    drive_service = build("drive", "v3", credentials=creds)
+    authed_http = google_auth_httplib2.AuthorizedHttp(creds, http=httplib2.Http(timeout=API_TIMEOUT))
+    drive_service = build("drive", "v3", http=authed_http)
 
     # Phase 1: Get Doc IDs from drive_files (already synced)
     with get_db_connection(readonly=True) as db:
@@ -37,8 +46,9 @@ def sync_docs_data() -> int:
     # Phase 2: Export document content as plain text via Drive API
     enriched = []
     preview_updates = []
-    for did, df in drive_lookup.items():
+    for i, (did, df) in enumerate(drive_lookup.items(), 1):
         try:
+            logger.info("Docs sync: %d/%d — %s", i, len(drive_lookup), did)
             content = drive_service.files().export(fileId=did, mimeType="text/plain").execute()
             if isinstance(content, bytes):
                 content = content.decode("utf-8", errors="replace")

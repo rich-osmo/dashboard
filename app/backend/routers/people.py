@@ -19,8 +19,17 @@ from utils.person_matching import get_person_email_patterns, rebuild_from_db
 from utils.safe_sql import safe_update_query
 
 PERSON_ALLOWED_COLUMNS = {
-    "name", "title", "reports_to", "group_name", "email", "role_content",
-    "is_coworker", "company", "phone", "bio", "linkedin_url",
+    "name",
+    "title",
+    "reports_to",
+    "group_name",
+    "email",
+    "role_content",
+    "is_coworker",
+    "company",
+    "phone",
+    "bio",
+    "linkedin_url",
 }
 ONE_ON_ONE_NOTE_ALLOWED_COLUMNS = {"meeting_date", "title", "content"}
 
@@ -87,9 +96,7 @@ def rename_group(group_name: str, body: dict):
     if group_name == "team":
         raise HTTPException(status_code=400, detail="Cannot rename the 'team' group")
     with get_write_db() as db:
-        count = db.execute(
-            "SELECT COUNT(*) as c FROM people WHERE group_name = ?", (group_name,)
-        ).fetchone()["c"]
+        count = db.execute("SELECT COUNT(*) as c FROM people WHERE group_name = ?", (group_name,)).fetchone()["c"]
         if count == 0:
             raise HTTPException(status_code=404, detail=f"No people in group '{group_name}'")
         db.execute(
@@ -286,8 +293,7 @@ def get_person(person_id: str):
         for ir in issue_rows:
             iss = dict(ir)
             ie_rows = db.execute(
-                "SELECT p.id, p.name FROM issue_people ip "
-                "JOIN people p ON ip.person_id = p.id WHERE ip.issue_id = ?",
+                "SELECT p.id, p.name FROM issue_people ip JOIN people p ON ip.person_id = p.id WHERE ip.issue_id = ?",
                 (iss["id"],),
             ).fetchall()
             iss["people"] = [{"id": r["id"], "name": r["name"]} for r in ie_rows]

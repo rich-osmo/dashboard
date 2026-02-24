@@ -314,7 +314,7 @@ function ProfileSection() {
 
   const save = () => {
     const updates: Partial<UserProfile> = {};
-    for (const key of ['user_name', 'user_title', 'user_company', 'user_company_description', 'user_email', 'user_email_domain', 'github_repo'] as const) {
+    for (const key of ['user_name', 'user_title', 'user_company', 'user_company_description', 'user_email', 'user_email_domain', 'user_location', 'github_repo'] as const) {
       if (form[key] !== undefined) updates[key] = form[key];
     }
     if (Object.keys(updates).length > 0) {
@@ -361,6 +361,7 @@ function ProfileSection() {
         <label>Company Description <input type="text" value={val('user_company_description')} onChange={(e) => setForm({ ...form, user_company_description: e.target.value })} /></label>
         <label>Email <input type="email" value={val('user_email')} onChange={(e) => setForm({ ...form, user_email: e.target.value })} /></label>
         <label>Email Domain <input type="text" value={val('user_email_domain')} onChange={(e) => setForm({ ...form, user_email_domain: e.target.value })} /></label>
+        <label>Location <input type="text" value={val('user_location')} onChange={(e) => setForm({ ...form, user_location: e.target.value })} placeholder="e.g. San Francisco, CA" /></label>
         <label>GitHub Repo <input type="text" value={val('github_repo')} onChange={(e) => setForm({ ...form, github_repo: e.target.value })} placeholder="e.g. myorg/myrepo" /></label>
       </div>
       <div style={{ display: 'flex', gap: 'var(--space-sm)', marginTop: 'var(--space-sm)' }}>

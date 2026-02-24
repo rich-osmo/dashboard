@@ -9,9 +9,11 @@ import type {
   PersonConnection,
   Note,
   Issue,
+  IssueGroupResponse,
   MeetingSearchResult,
   OneOnOneNote,
   DashboardData,
+  BriefingData,
   PrioritiesData,
   SyncStatus,
   AuthStatus,
@@ -142,6 +144,14 @@ export function useDeleteNote() {
   });
 }
 
+export function useBriefing() {
+  return useQuery({
+    queryKey: ['briefing'],
+    queryFn: () => api.get<BriefingData>('/briefing'),
+    refetchInterval: 5 * 60 * 1000,
+  });
+}
+
 export function useDashboard(days: number = 7) {
   return useQuery({
     queryKey: ['dashboard', days],
@@ -164,6 +174,7 @@ export function useRefreshPriorities() {
     mutationFn: () => api.get<PrioritiesData>('/priorities?refresh=true'),
     onSuccess: (data) => {
       qc.setQueryData<PrioritiesData>(['priorities'], data);
+      qc.invalidateQueries({ queryKey: ['briefing'] });
     },
   });
 }
@@ -313,16 +324,40 @@ export function useIssues(filters?: {
   person_id?: string;
   priority?: number;
   tshirt_size?: string;
+  project_id?: number;
+  tag?: string;
+  search?: string;
+  sort_by?: string;
+  sort_dir?: string;
 }) {
   const params = new URLSearchParams();
   if (filters?.status) params.set('status', filters.status);
   if (filters?.person_id) params.set('person_id', filters.person_id);
   if (filters?.priority !== undefined) params.set('priority', String(filters.priority));
   if (filters?.tshirt_size) params.set('tshirt_size', filters.tshirt_size);
+  if (filters?.project_id !== undefined) params.set('project_id', String(filters.project_id));
+  if (filters?.tag) params.set('tag', filters.tag);
+  if (filters?.search) params.set('search', filters.search);
+  if (filters?.sort_by) params.set('sort_by', filters.sort_by);
+  if (filters?.sort_dir) params.set('sort_dir', filters.sort_dir);
   const qs = params.toString();
   return useQuery({
     queryKey: ['issues', filters],
     queryFn: () => api.get<Issue[]>(`/issues${qs ? `?${qs}` : ''}`),
+  });
+}
+
+export function useIssueTags() {
+  return useQuery({
+    queryKey: ['issue-tags'],
+    queryFn: () => api.get<string[]>('/issues/tags'),
+    staleTime: 30_000,
+  });
+}
+
+export function useGroupIssues() {
+  return useMutation({
+    mutationFn: () => api.post<IssueGroupResponse>('/issues/group', {}),
   });
 }
 
@@ -336,6 +371,9 @@ export function useCreateIssue() {
       tshirt_size?: string;
       person_ids?: string[];
       meeting_ids?: { ref_type: string; ref_id: string }[];
+      project_id?: number | null;
+      tags?: string[];
+      due_date?: string | null;
     }) => api.post<Issue>('/issues', issue),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['issues'] });
@@ -1167,7 +1205,10 @@ export function useToggleConnector() {
   return useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
       api.post(`/auth/connectors/${id}/${enabled ? 'enable' : 'disable'}`, {}),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['connectors'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['connectors'] });
+      qc.invalidateQueries({ queryKey: ['auth-status'] });
+    },
   });
 }
 

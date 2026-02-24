@@ -120,15 +120,22 @@ def _build_system_prompt() -> str:
     return f"""\
 You are a morning briefing assistant {ctx}. Your job is to analyze \
 the user's Slack messages, emails, calendar, open notes, Ramp bills, and recently modified Drive files \
-and identify up to 25 important items they should focus on today.
+and produce a morning briefing.
 
-For each item, provide:
-- A short title (max 10 words)
-- A one-sentence reason why it matters or what action to take
-- The source: "slack", "email", "calendar", "note", "ramp", or "drive"
-- An urgency level: "high", "medium", or "low"
+Your response must be a JSON object with two keys:
 
-Prioritize:
+1. "summary" — A concise 2-3 sentence narrative overview of the day ahead. \
+Write it like an executive assistant briefing their boss: what kind of day is it, \
+what are the key themes, what deserves their focus. Be direct and specific, not generic. \
+Reference specific meetings, people, or topics by name. Do not use bullet points.
+
+2. "items" — An array of up to 25 important items to focus on today. Each item has:
+   - title: short (max 10 words)
+   - reason: one sentence — why it matters or what action to take
+   - source: "slack", "email", "calendar", "note", "ramp", or "drive"
+   - urgency: "high", "medium", or "low"
+
+Prioritize items:
 1. Direct messages or mentions that need a reply
 2. Meetings happening today that need prep
 3. Unread emails from executives, direct reports, or external stakeholders
@@ -146,15 +153,15 @@ Ignore and never surface:
 
 Be concise and actionable. Focus on what the user should DO, not just what happened.
 
-Respond with ONLY valid JSON — an array of objects with keys: title, reason, source, urgency.
-No markdown, no explanation, just the JSON array."""
+Respond with ONLY valid JSON — an object with keys "summary" (string) and "items" (array).
+No markdown, no explanation, just the JSON object."""
 
 
-def _call_gemini(context: dict, dismissed_titles: list[str]) -> list[dict]:
-    """Call Gemini API to analyze priorities."""
+def _call_gemini(context: dict, dismissed_titles: list[str]) -> dict:
+    """Call Gemini API to analyze priorities. Returns {"summary": str, "items": list}."""
     api_key = get_secret("GEMINI_API_KEY") or ""
     if not api_key:
-        return []
+        return {"summary": "", "items": []}
 
     from google import genai
 
@@ -181,12 +188,18 @@ def _call_gemini(context: dict, dismissed_titles: list[str]) -> list[dict]:
     )
 
     try:
-        items = json.loads(response.text)
-        if isinstance(items, list):
-            return items
+        parsed = json.loads(response.text)
+        # Handle both new format {"summary": ..., "items": [...]} and legacy format [...]
+        if isinstance(parsed, dict):
+            return {
+                "summary": parsed.get("summary", ""),
+                "items": parsed.get("items", []),
+            }
+        if isinstance(parsed, list):
+            return {"summary": "", "items": parsed}
     except (json.JSONDecodeError, TypeError):
         pass
-    return []
+    return {"summary": "", "items": []}
 
 
 def _get_cached(db) -> list[dict] | None:
@@ -197,15 +210,28 @@ def _get_cached(db) -> list[dict] | None:
     return [dict(r) for r in rows]
 
 
-def _save_cache(db, items: list[dict]):
-    """Replace cached priorities with new items."""
+def _save_cache(db, items: list[dict], summary: str = ""):
+    """Replace cached priorities and summary."""
     db.execute("DELETE FROM cached_priorities")
     for item in items:
         db.execute(
             "INSERT INTO cached_priorities (title, reason, source, urgency) VALUES (?, ?, ?, ?)",
             (item.get("title", ""), item.get("reason", ""), item.get("source", ""), item.get("urgency", "")),
         )
+    # Save summary
+    db.execute("DELETE FROM cached_briefing_summary")
+    if summary:
+        db.execute(
+            "INSERT INTO cached_briefing_summary (id, summary) VALUES (1, ?)",
+            (summary,),
+        )
     db.commit()
+
+
+def get_cached_summary(db) -> str | None:
+    """Return cached briefing summary, or None."""
+    row = db.execute("SELECT summary FROM cached_briefing_summary WHERE id = 1").fetchone()
+    return row["summary"] if row else None
 
 
 @router.get("")
@@ -218,22 +244,26 @@ def get_priorities(refresh: bool = Query(False)):
             cached = _get_cached(db)
             if cached is not None:
                 items = [item for item in cached if item.get("title") not in dismissed]
-                return {"items": items}
+                summary = get_cached_summary(db)
+                return {"items": items, "summary": summary}
 
         # Generate fresh priorities from Gemini
         context = _build_context(db)
 
     try:
-        items = _call_gemini(context, list(dismissed))
+        result = _call_gemini(context, list(dismissed))
     except Exception as e:
-        return {"items": [], "error": str(e)}
+        return {"items": [], "summary": None, "error": str(e)}
+
+    items = result["items"]
+    summary = result["summary"]
 
     # Cache the results
     with get_write_db() as db:
-        _save_cache(db, items)
+        _save_cache(db, items, summary)
 
     items = [item for item in items if item.get("title") not in dismissed]
-    return {"items": items}
+    return {"items": items, "summary": summary}
 
 
 @router.post("/dismiss")

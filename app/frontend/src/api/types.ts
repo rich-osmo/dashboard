@@ -113,10 +113,25 @@ export interface Issue {
   // backward compat
   employees?: { id: string; name: string }[];
   meetings: { ref_type: 'calendar' | 'granola'; ref_id: string; summary: string; start_time: string | null }[];
+  project_id: number | null;
+  project_name: string | null;
+  tags: string[];
+  due_date: string | null;
   created_at: string;
   updated_at: string;
   completed_at: string | null;
   _type?: 'issue';
+}
+
+export interface IssueGroup {
+  name: string;
+  description: string;
+  issue_ids: number[];
+}
+
+export interface IssueGroupResponse {
+  groups: IssueGroup[];
+  error?: string;
 }
 
 export interface MeetingSearchResult {
@@ -740,6 +755,7 @@ export interface UserProfile {
   user_company_description?: string;
   user_email?: string;
   user_email_domain?: string;
+  user_location?: string;
   github_repo?: string;
   skip_domains?: string[];
   news_topics?: string[];
@@ -771,3 +787,45 @@ export interface SecretStatus {
 }
 
 export type SecretsStatus = Record<string, SecretStatus>;
+
+// --- Briefing ---
+
+export interface WeatherData {
+  temp_f: number | null;
+  condition: string;
+  location: string;
+}
+
+export interface OvernightItem {
+  id: string;
+  source: 'email' | 'slack' | 'notion' | 'drive';
+  title: string;
+  subtitle: string;
+  time: string;
+  url?: string;
+  permalink?: string;
+  is_unread?: boolean;
+  is_mention?: boolean;
+}
+
+export interface BriefingData {
+  greeting: {
+    user_name: string;
+  };
+  summary: string | null;
+  weather: WeatherData | null;
+  calendar_today: CalendarEvent[];
+  calendar_summary: {
+    tomorrow_count: number;
+    week_count: number;
+  };
+  attention_items: PriorityItem[];
+  pulse: {
+    unread_emails: number;
+    slack_dms: number;
+    pr_reviews: number;
+    open_notes: number;
+    overdue_bills: number;
+  };
+  overnight: OvernightItem[];
+}

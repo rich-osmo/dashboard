@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from app_config import ALLOWED_SECRET_KEYS, delete_secret, get_secret, set_secret
 from config import GCLOUD_CREDENTIALS_PATH, GRANOLA_CACHE_PATH
+from database import get_write_db
 
 logger = logging.getLogger(__name__)
 
@@ -203,8 +204,42 @@ _AUTH_TO_SYNC = {
     "notion": ["notion"],
     "granola": ["granola"],
     "github": ["github"],
-    "ramp": ["ramp"],
+    "ramp": ["ramp", "ramp_vendors", "ramp_bills"],
 }
+
+
+# Map secret keys to the sync_state sources they affect
+_SECRET_TO_SYNC = {
+    "SLACK_TOKEN": ["slack"],
+    "NOTION_TOKEN": ["notion"],
+    "RAMP_CLIENT_ID": ["ramp", "ramp_vendors", "ramp_bills"],
+    "RAMP_CLIENT_SECRET": ["ramp", "ramp_vendors", "ramp_bills"],
+}
+
+# Map connector IDs to sync_state sources
+_CONNECTOR_TO_SYNC = {
+    "google": ["gmail", "calendar"],
+    "google_drive": ["drive", "sheets", "docs"],
+    "slack": ["slack"],
+    "notion": ["notion"],
+    "granola": ["granola"],
+    "github": ["github"],
+    "ramp": ["ramp", "ramp_vendors", "ramp_bills"],
+    "news": ["news"],
+}
+
+
+def _clear_sync_errors(sources: list[str]):
+    """Reset sync_state error fields for the given sources so stale errors don't persist."""
+    if not sources:
+        return
+    with get_write_db() as db:
+        for src in sources:
+            db.execute(
+                "UPDATE sync_state SET last_sync_status = NULL, last_error = NULL WHERE source = ?",
+                (src,),
+            )
+        db.commit()
 
 
 @router.get("/status")
@@ -241,6 +276,9 @@ def google_auth():
         from connectors.google_auth import run_oauth_flow
 
         run_oauth_flow()
+        # Clear stale sync errors for all Google-related sources
+        _clear_sync_errors(_AUTH_TO_SYNC.get("google", []))
+        _clear_sync_errors(_AUTH_TO_SYNC.get("google_drive", []))
         return {"status": "authenticated"}
     except Exception as e:
         logger.exception("Google OAuth flow failed")
@@ -278,7 +316,11 @@ def test_connection(service: str):
     checker = checkers.get(service)
     if not checker:
         return {"error": f"Unknown service: {service}"}
-    return checker()
+    result = checker()
+    # If connection test passed, clear stale sync errors
+    if result.get("connected"):
+        _clear_sync_errors(_AUTH_TO_SYNC.get(service, []))
+    return result
 
 
 # --- Secrets management ---
@@ -317,6 +359,8 @@ def update_secret(body: SecretUpdate):
     if body.key not in ALLOWED_SECRET_KEYS:
         return {"error": f"Unknown secret key: {body.key}"}
     set_secret(body.key, body.value)
+    # Clear stale sync errors for sources affected by this secret
+    _clear_sync_errors(_SECRET_TO_SYNC.get(body.key, []))
     return {"status": "ok", "key": body.key, "configured": True}
 
 
@@ -368,6 +412,8 @@ def enable_connector(connector_id: str):
     if not get_by_id(connector_id):
         return {"error": f"Unknown connector: {connector_id}"}
     set_connector_enabled(connector_id, True)
+    # Clear stale sync errors so UI doesn't show old failures
+    _clear_sync_errors(_CONNECTOR_TO_SYNC.get(connector_id, []))
     return {"status": "ok", "connector": connector_id, "enabled": True}
 
 

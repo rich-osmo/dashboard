@@ -59,12 +59,13 @@ interface ClaudeTerminalProps {
   visible: boolean;
   overlayOpen?: boolean;
   personaId?: number;
+  initialPrompt?: string;
   onConnected?: () => void;
   onDisconnected?: () => void;
 }
 
 export const ClaudeTerminal = forwardRef<ClaudeTerminalHandle, ClaudeTerminalProps>(
-  ({ visible, overlayOpen, personaId, onConnected, onDisconnected }, ref) => {
+  ({ visible, overlayOpen, personaId, initialPrompt, onConnected, onDisconnected }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const termRef = useRef<Terminal | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
@@ -141,6 +142,14 @@ export const ClaudeTerminal = forwardRef<ClaudeTerminalHandle, ClaudeTerminalPro
           rows: term.rows,
           cols: term.cols,
         }));
+        // Send initial prompt after Claude Code boots
+        if (initialPrompt) {
+          setTimeout(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(new TextEncoder().encode(initialPrompt + '\n'));
+            }
+          }, 2500);
+        }
       };
 
       ws.onmessage = (evt) => {

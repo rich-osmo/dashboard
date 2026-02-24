@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useMeetings, useUpsertMeetingNote, useDeleteMeetingNote, useDismissPrioritizedItem, useProfile } from '../api/hooks';
 import type { MeetingWithContext } from '../api/types';
 import { useFocusNavigation } from '../hooks/useFocusNavigation';
@@ -41,6 +41,12 @@ function formatMeetingDate(startTime: string): string {
   });
 
   return relative ? `${relative}, ${dateStr}` : dateStr;
+}
+
+function formatHour(hour: number): string {
+  if (hour === 0) return '12 AM';
+  if (hour === 12) return '12 PM';
+  return hour < 12 ? `${hour} AM` : `${hour - 12} PM`;
 }
 
 function parseAttendees(json?: string): { email: string; name: string; response: string }[] {
@@ -228,7 +234,6 @@ function MeetingRow({
   const upsertNote = useUpsertMeetingNote();
   const deleteNote = useDeleteMeetingNote();
   const { data: profile } = useProfile();
-  const [editing, setEditing] = useState(false);
   const [noteText, setNoteText] = useState(meeting.note_content || '');
   const [expanded, setExpanded] = useState(false);
 
@@ -246,10 +251,7 @@ function MeetingRow({
 
   const handleSave = () => {
     if (!noteText.trim()) return;
-    upsertNote.mutate(
-      { refType, refId, content: noteText.trim() },
-      { onSuccess: () => setEditing(false) }
-    );
+    upsertNote.mutate({ refType, refId, content: noteText.trim() });
   };
 
   const handleDelete = () => {
@@ -259,77 +261,92 @@ function MeetingRow({
       {
         onSuccess: () => {
           setNoteText('');
-          setEditing(false);
         },
       }
     );
   };
 
+  const handleHeaderClick = (e: React.MouseEvent) => {
+    // Don't toggle expand if clicking a link or button inside the header
+    const target = e.target as HTMLElement;
+    if (target.closest('a') || target.closest('.meeting-title-link')) return;
+    setExpanded(!expanded);
+  };
+
   return (
-    <div className="meeting-entry dashboard-item-row">
-      <div className="meeting-date">
-        <span style={{ fontVariantNumeric: 'tabular-nums' }}>
-          {formatMeetingDate(meeting.start_time)}
-        </span>
-        {meeting.end_time && (
-          <span style={{ marginLeft: 'var(--space-sm)', color: 'var(--color-text-light)' }}>
-            {formatMeetingTime(meeting.start_time, meeting.end_time)}
+    <div className="meeting-entry">
+      {/* Header: title left, time right */}
+      <div className="meeting-row-header" onClick={handleHeaderClick}>
+        <div className="meeting-row-title">
+          {hasGranola ? (
+            <button
+              className="btn-link meeting-title-link"
+              onClick={(e) => { e.stopPropagation(); onOpenModal(meeting); }}
+              style={{ fontWeight: 600 }}
+            >
+              {meeting.summary}
+            </button>
+          ) : (
+            <span>{meeting.summary}</span>
+          )}
+          {meeting.granola_link && (
+            <a
+              href={meeting.granola_link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="meeting-source-badge"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Granola
+            </a>
+          )}
+          {meeting.html_link && (
+            <a
+              href={meeting.html_link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="meeting-source-badge"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Calendar
+            </a>
+          )}
+        </div>
+        <div className="meeting-row-meta">
+          {!expanded && meeting.note_content && (
+            <span className="meeting-has-note-indicator">has notes</span>
+          )}
+          <span className="meeting-row-time">
+            {meeting.end_time
+              ? formatMeetingTime(meeting.start_time, meeting.end_time)
+              : new Date(meeting.start_time).toLocaleTimeString('en-US', {
+                  hour: 'numeric',
+                  minute: '2-digit',
+                  hour12: true,
+                })}
           </span>
-        )}
+          <span className={`collapse-icon ${expanded ? 'open' : ''}`}>
+            &#x25b6;
+          </span>
+        </div>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 'var(--space-sm)', flexWrap: 'wrap' }}>
-        {hasGranola ? (
-          <button
-            className="btn-link meeting-title-link"
-            onClick={() => onOpenModal(meeting)}
-            style={{ fontWeight: 600 }}
-          >
-            {meeting.summary}
-          </button>
-        ) : (
-          <span style={{ fontWeight: 600 }}>{meeting.summary}</span>
-        )}
+      {/* Expanded details */}
+      {expanded && (
+        <div className="meeting-details">
+          {meeting.description && (
+            <p className="meeting-description">{meeting.description}</p>
+          )}
 
-        {meeting.granola_link && (
-          <a
-            href={meeting.granola_link}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="meeting-source-badge"
-          >
-            Granola
-          </a>
-        )}
-        {meeting.html_link && (
-          <a
-            href={meeting.html_link}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="meeting-source-badge"
-          >
-            Calendar
-          </a>
-        )}
-      </div>
+          {attendeeNames.length > 0 && (
+            <div className="meeting-details-attendees">
+              <span className="meeting-details-label">People</span>
+              {attendeeNames.join(', ')}
+            </div>
+          )}
 
-      {attendeeNames.length > 0 && (
-        <div className="meetings-attendees">{attendeeNames.join(', ')}</div>
-      )}
-
-      {/* Expandable Granola summary */}
-      {meeting.granola_summary_plain && (
-        <div>
-          <button
-            className="collapsible-header"
-            onClick={() => setExpanded(!expanded)}
-          >
-            <span className={`collapse-icon ${expanded ? 'open' : ''}`}>
-              &#x25b6;
-            </span>
-            {expanded ? 'Hide' : 'Show'} summary
-          </button>
-          {expanded && (
+          {/* Granola summary */}
+          {(meeting.granola_summary_html || meeting.granola_summary_plain) && (
             <div className="meeting-summary">
               {meeting.granola_summary_html ? (
                 <div
@@ -343,86 +360,212 @@ function MeetingRow({
               )}
             </div>
           )}
-        </div>
-      )}
 
-      {/* Existing note display */}
-      {meeting.note_content && !editing && (
-        <div className="one-on-one-note-content">
-          <div style={{ whiteSpace: 'pre-wrap' }}>{meeting.note_content}</div>
-          <div
-            style={{
-              display: 'flex',
-              gap: 'var(--space-sm)',
-              marginTop: 'var(--space-xs)',
-            }}
-          >
-            <button
-              className="btn-link"
-              onClick={() => {
-                setNoteText(meeting.note_content || '');
-                setEditing(true);
-              }}
-            >
-              edit
-            </button>
-            <button
-              className="btn-link"
-              style={{ color: 'var(--color-text-light)' }}
-              onClick={handleDelete}
-            >
-              delete
-            </button>
+          {/* Notes - always visible when expanded */}
+          <div className="meeting-inline-notes">
+            <textarea
+              className="note-input"
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              placeholder="Add your notes..."
+              rows={3}
+              style={{ width: '100%', resize: 'vertical' }}
+              onClick={(e) => e.stopPropagation()}
+            />
+            <div className="meeting-note-actions">
+              <button className="btn-primary" onClick={handleSave} disabled={upsertNote.isPending}>
+                Save
+              </button>
+              {meeting.note_content && (
+                <button
+                  className="btn-link"
+                  style={{ color: 'var(--color-text-light)' }}
+                  onClick={handleDelete}
+                >
+                  delete
+                </button>
+              )}
+            </div>
           </div>
         </div>
-      )}
-
-      {/* Note editing textarea */}
-      {editing && (
-        <div className="meeting-note-editor">
-          <textarea
-            className="note-input"
-            value={noteText}
-            onChange={(e) => setNoteText(e.target.value)}
-            placeholder="Add your notes..."
-            rows={3}
-            style={{ width: '100%', resize: 'vertical' }}
-            autoFocus
-          />
-          <div
-            style={{
-              display: 'flex',
-              gap: 'var(--space-sm)',
-              marginTop: 'var(--space-xs)',
-            }}
-          >
-            <button className="btn-primary" onClick={handleSave} disabled={upsertNote.isPending}>
-              Save
-            </button>
-            <button className="btn-secondary" onClick={() => setEditing(false)}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Add note button (when no note exists) */}
-      {!meeting.note_content && !editing && (
-        <button
-          className="btn-link meeting-add-note-btn"
-          onClick={() => {
-            setNoteText('');
-            setEditing(true);
-          }}
-        >
-          + add notes
-        </button>
       )}
     </div>
   );
 }
 
-function MeetingList({ tab }: { tab: 'upcoming' | 'past' }) {
+// Group meetings by date for day headers
+function groupByDate(meetings: MeetingWithContext[]): { dateKey: string; dateLabel: string; meetings: MeetingWithContext[] }[] {
+  const groups: Map<string, MeetingWithContext[]> = new Map();
+  for (const m of meetings) {
+    const dateKey = new Date(m.start_time).toDateString();
+    if (!groups.has(dateKey)) groups.set(dateKey, []);
+    groups.get(dateKey)!.push(m);
+  }
+  return Array.from(groups.entries()).map(([dateKey, dayMeetings]) => ({
+    dateKey,
+    dateLabel: formatMeetingDate(dayMeetings[0].start_time),
+    meetings: dayMeetings,
+  }));
+}
+
+// Detect overlapping meetings for side-by-side rendering
+function computeOverlapColumns(meetings: MeetingWithContext[]): Map<string, { col: number; totalCols: number }> {
+  const result = new Map<string, { col: number; totalCols: number }>();
+  if (meetings.length === 0) return result;
+
+  type Block = { id: string; start: number; end: number };
+  const blocks: Block[] = meetings.map(m => {
+    const s = new Date(m.start_time).getTime();
+    const e = m.end_time ? new Date(m.end_time).getTime() : s + 30 * 60000;
+    return { id: m.event_id || m.granola_id || m.start_time, start: s, end: e };
+  });
+
+  // Find groups of overlapping meetings
+  const sorted = [...blocks].sort((a, b) => a.start - b.start);
+  const groups: Block[][] = [];
+  let currentGroup: Block[] = [sorted[0]];
+  let groupEnd = sorted[0].end;
+
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i].start < groupEnd) {
+      currentGroup.push(sorted[i]);
+      groupEnd = Math.max(groupEnd, sorted[i].end);
+    } else {
+      groups.push(currentGroup);
+      currentGroup = [sorted[i]];
+      groupEnd = sorted[i].end;
+    }
+  }
+  groups.push(currentGroup);
+
+  for (const group of groups) {
+    for (let i = 0; i < group.length; i++) {
+      result.set(group[i].id, { col: i, totalCols: group.length });
+    }
+  }
+
+  return result;
+}
+
+function DayCalendarView({
+  meetings,
+  onOpenModal,
+}: {
+  meetings: MeetingWithContext[];
+  onOpenModal: (m: MeetingWithContext) => void;
+}) {
+  const now = new Date();
+  const todayStr = now.toDateString();
+  const todayMeetings = meetings.filter(m =>
+    new Date(m.start_time).toDateString() === todayStr
+  );
+
+  const allDayMeetings = todayMeetings.filter(m => m.all_day);
+  const timedMeetings = todayMeetings.filter(m => !m.all_day);
+
+  // Determine time range
+  let startHour = 8;
+  let endHour = 18;
+  for (const m of timedMeetings) {
+    const h = new Date(m.start_time).getHours();
+    const eh = m.end_time ? new Date(m.end_time).getHours() : h + 1;
+    if (h < startHour) startHour = Math.max(0, h);
+    if (eh >= endHour) endHour = Math.min(24, eh + 1);
+  }
+
+  const HOUR_HEIGHT = 60;
+  const totalHeight = (endHour - startHour) * HOUR_HEIGHT;
+
+  const overlapCols = computeOverlapColumns(timedMeetings);
+
+  const positioned = timedMeetings.map(m => {
+    const start = new Date(m.start_time);
+    const end = m.end_time ? new Date(m.end_time) : new Date(start.getTime() + 30 * 60000);
+    const startMinutes = (start.getHours() - startHour) * 60 + start.getMinutes();
+    const endMinutes = (end.getHours() - startHour) * 60 + end.getMinutes();
+    const top = (startMinutes / 60) * HOUR_HEIGHT;
+    const height = Math.max(((endMinutes - startMinutes) / 60) * HOUR_HEIGHT, 24);
+    const id = m.event_id || m.granola_id || m.start_time;
+    const overlap = overlapCols.get(id) || { col: 0, totalCols: 1 };
+    return { meeting: m, top, height, overlap };
+  });
+
+  // Now indicator
+  const nowMinutes = (now.getHours() - startHour) * 60 + now.getMinutes();
+  const nowTop = (nowMinutes / 60) * HOUR_HEIGHT;
+  const showNow = now.toDateString() === todayStr && nowMinutes >= 0 && nowMinutes <= (endHour - startHour) * 60;
+
+  if (todayMeetings.length === 0) {
+    return <p className="empty-state">No meetings today.</p>;
+  }
+
+  return (
+    <div className="day-calendar">
+      <div className="day-calendar-header">
+        {formatMeetingDate(now.toISOString())}
+        {' '}&middot;{' '}
+        {todayMeetings.length} meeting{todayMeetings.length !== 1 ? 's' : ''}
+      </div>
+
+      {allDayMeetings.length > 0 && (
+        <div className="day-calendar-allday">
+          <span className="day-calendar-allday-label">All day</span>
+          {allDayMeetings.map(m => m.summary).join(', ')}
+        </div>
+      )}
+
+      <div className="day-calendar-container" style={{ height: totalHeight, position: 'relative' }}>
+        {/* Hour lines */}
+        {Array.from({ length: endHour - startHour + 1 }, (_, i) => (
+          <div key={i} className="day-calendar-hour" style={{ top: i * HOUR_HEIGHT }}>
+            <span className="day-calendar-hour-label">
+              {formatHour(startHour + i)}
+            </span>
+          </div>
+        ))}
+
+        {/* Now indicator */}
+        {showNow && (
+          <div className="day-calendar-now" style={{ top: nowTop }} />
+        )}
+
+        {/* Meeting blocks */}
+        {positioned.map(({ meeting, top, height, overlap }) => {
+          const widthPct = 100 / overlap.totalCols;
+          const leftPct = overlap.col * widthPct;
+          return (
+            <div
+              key={meeting.event_id || meeting.granola_id || meeting.start_time}
+              className="day-calendar-block"
+              style={{
+                top,
+                height,
+                left: `${leftPct}%`,
+                width: `${widthPct}%`,
+              }}
+              onClick={() => onOpenModal(meeting)}
+            >
+              <span className="day-calendar-block-title">{meeting.summary}</span>
+              {height > 32 && (
+                <span className="day-calendar-block-time">
+                  {formatMeetingTime(meeting.start_time, meeting.end_time)}
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function MeetingList({
+  tab,
+  viewMode,
+}: {
+  tab: 'upcoming' | 'past';
+  viewMode: 'list' | 'calendar';
+}) {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
     useMeetings(tab);
 
@@ -446,8 +589,9 @@ function MeetingList({ tab }: { tab: 'upcoming' | 'past' }) {
     return () => observer.disconnect();
   }, [handleObserver]);
 
-  const meetings = data?.pages.flatMap((p) => p.meetings) ?? [];
+  const meetings = useMemo(() => data?.pages.flatMap((p) => p.meetings) ?? [], [data]);
   const total = data?.pages[0]?.total ?? 0;
+  const dayGroups = useMemo(() => groupByDate(meetings), [meetings]);
 
   const dismissMeeting = useDismissPrioritizedItem();
 
@@ -459,12 +603,11 @@ function MeetingList({ tab }: { tab: 'upcoming' | 'past' }) {
   };
 
   const handleExpandAtIndex = (index: number) => {
-    // Find the expand/collapse button in the focused meeting entry and click it
-    const entries = document.querySelectorAll('.dashboard-item-row');
+    const entries = document.querySelectorAll('.meeting-entry');
     const entry = entries[index];
     if (entry) {
-      const expandBtn = entry.querySelector('.collapsible-header') as HTMLButtonElement;
-      expandBtn?.click();
+      const header = entry.querySelector('.meeting-row-header') as HTMLElement;
+      header?.click();
     }
   };
 
@@ -479,8 +622,8 @@ function MeetingList({ tab }: { tab: 'upcoming' | 'past' }) {
   };
 
   const { containerRef } = useFocusNavigation({
-    selector: '.dashboard-item-row',
-    enabled: !isLoading,
+    selector: '.meeting-entry',
+    enabled: !isLoading && viewMode === 'list',
     onOpen: handleOpenAtIndex,
     onExpand: handleExpandAtIndex,
     onDismiss: handleDismissAtIndex,
@@ -500,17 +643,38 @@ function MeetingList({ tab }: { tab: 'upcoming' | 'past' }) {
     );
   }
 
+  // Calendar view
+  if (viewMode === 'calendar' && tab === 'upcoming') {
+    return (
+      <>
+        <DayCalendarView meetings={meetings} onOpenModal={setSelectedMeeting} />
+        {selectedMeeting && (
+          <MeetingModal
+            meeting={selectedMeeting}
+            onClose={() => setSelectedMeeting(null)}
+          />
+        )}
+      </>
+    );
+  }
+
+  // List view with day groups
   return (
     <div ref={containerRef}>
       <p style={{ color: 'var(--color-text-light)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-md)' }}>
         {total} {tab === 'upcoming' ? 'upcoming' : 'past'} meeting{total !== 1 ? 's' : ''}
       </p>
-      {meetings.map((m, i) => (
-        <MeetingRow
-          key={`${m.event_id || m.granola_id || i}`}
-          meeting={m}
-          onOpenModal={setSelectedMeeting}
-        />
+      {dayGroups.map(({ dateKey, dateLabel, meetings: dayMeetings }) => (
+        <div key={dateKey} className="meeting-day-group">
+          <div className="meeting-day-header">{dateLabel}</div>
+          {dayMeetings.map((m, i) => (
+            <MeetingRow
+              key={`${m.event_id || m.granola_id || i}`}
+              meeting={m}
+              onOpenModal={setSelectedMeeting}
+            />
+          ))}
+        </div>
       ))}
       <div ref={observerRef} style={{ height: 1 }} />
       {isFetchingNextPage && (
@@ -526,7 +690,7 @@ function MeetingList({ tab }: { tab: 'upcoming' | 'past' }) {
       )}
 
       {meetings.length > 0 && (
-        <KeyboardHints hints={['j/k navigate', 'Enter open modal', 'e expand/collapse', 'd dismiss', 't toggle tab']} />
+        <KeyboardHints hints={['j/k navigate', 'Enter open modal', 'e expand/collapse', 'd dismiss', 't toggle tab', 'v toggle view']} />
       )}
     </div>
   );
@@ -534,30 +698,51 @@ function MeetingList({ tab }: { tab: 'upcoming' | 'past' }) {
 
 export function MeetingsPage() {
   const [tab, setTab] = useState<'upcoming' | 'past'>('upcoming');
+  const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
 
-  // Keyboard handler for tab switching
+  // Keyboard handler for tab switching and view toggle
   useEffect(() => {
-    const handleTabSwitch = (e: KeyboardEvent) => {
+    const handleKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       const tag = target.tagName;
-      // Skip if inside input/textarea
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (target.isContentEditable) return;
 
-      // 't' key toggles between tabs
       if (e.key === 't' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
         setTab(prev => prev === 'upcoming' ? 'past' : 'upcoming');
       }
+      if (e.key === 'v' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        setViewMode(prev => prev === 'list' ? 'calendar' : 'list');
+      }
     };
 
-    document.addEventListener('keydown', handleTabSwitch);
-    return () => document.removeEventListener('keydown', handleTabSwitch);
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
   }, []);
 
   return (
     <div>
-      <h1>Meetings</h1>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+        <h1>Meetings</h1>
+        {tab === 'upcoming' && (
+          <div className="issue-view-modes">
+            <button
+              className={`filter-btn${viewMode === 'list' ? ' active' : ''}`}
+              onClick={() => setViewMode('list')}
+            >
+              List
+            </button>
+            <button
+              className={`filter-btn${viewMode === 'calendar' ? ' active' : ''}`}
+              onClick={() => setViewMode('calendar')}
+            >
+              Day
+            </button>
+          </div>
+        )}
+      </div>
 
       <div className="tab-bar">
         <button
@@ -574,7 +759,7 @@ export function MeetingsPage() {
         </button>
       </div>
 
-      <MeetingList tab={tab} />
+      <MeetingList tab={tab} viewMode={viewMode} />
     </div>
   );
 }

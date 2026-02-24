@@ -1,12 +1,19 @@
 """Google Sheets API connector — enriches synced Drive spreadsheets with tab metadata."""
 
 import json
+import logging
 
+import google_auth_httplib2
+import httplib2
 from googleapiclient.discovery import build
 
 from config import SHEETS_SYNC_LIMIT
 from connectors.google_auth import get_google_credentials
 from database import batch_upsert, get_db_connection, get_write_db
+
+logger = logging.getLogger(__name__)
+
+API_TIMEOUT = 30  # seconds per HTTP request
 
 
 def sync_sheets_data() -> int:
@@ -15,7 +22,8 @@ def sync_sheets_data() -> int:
     Depends on drive.sync_drive_files() having already populated drive_files.
     """
     creds = get_google_credentials()
-    sheets_service = build("sheets", "v4", credentials=creds)
+    authed_http = google_auth_httplib2.AuthorizedHttp(creds, http=httplib2.Http(timeout=API_TIMEOUT))
+    sheets_service = build("sheets", "v4", http=authed_http)
 
     # Phase 1: Get Sheet IDs from drive_files (already synced)
     with get_db_connection(readonly=True) as db:
@@ -34,8 +42,9 @@ def sync_sheets_data() -> int:
 
     # Phase 2: Fetch detailed metadata for each sheet
     enriched = []
-    for sid, df in drive_lookup.items():
+    for i, (sid, df) in enumerate(drive_lookup.items(), 1):
         try:
+            logger.info("Sheets sync: %d/%d — %s", i, len(drive_lookup), sid)
             meta = sheets_service.spreadsheets().get(spreadsheetId=sid, fields="properties,sheets.properties").execute()
 
             props = meta.get("properties", {})

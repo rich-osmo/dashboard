@@ -120,9 +120,7 @@ def list_notes(
     pid = person_id or employee_id
     with get_db_connection(readonly=True) as db:
         if pid:
-            query = (
-                "SELECT DISTINCT t.* FROM notes t JOIN note_people np ON t.id = np.note_id WHERE np.person_id = ?"
-            )
+            query = "SELECT DISTINCT t.* FROM notes t JOIN note_people np ON t.id = np.note_id WHERE np.person_id = ?"
             params: list = [pid]
         else:
             query = "SELECT t.* FROM notes t WHERE 1=1"

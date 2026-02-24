@@ -2,17 +2,22 @@
 
 from datetime import datetime, timedelta, timezone
 
+import google_auth_httplib2
+import httplib2
 from googleapiclient.discovery import build
 
 from config import DRIVE_SYNC_DAYS, DRIVE_SYNC_LIMIT
 from connectors.google_auth import get_google_credentials
 from database import batch_upsert, get_write_db
 
+API_TIMEOUT = 30  # seconds per HTTP request
+
 
 def sync_drive_files() -> int:
     """Sync recently modified Drive files to local database."""
     creds = get_google_credentials()
-    service = build("drive", "v3", credentials=creds)
+    authed_http = google_auth_httplib2.AuthorizedHttp(creds, http=httplib2.Http(timeout=API_TIMEOUT))
+    service = build("drive", "v3", http=authed_http)
 
     cutoff = (datetime.now(timezone.utc) - timedelta(days=DRIVE_SYNC_DAYS)).isoformat()
 
