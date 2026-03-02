@@ -7,9 +7,9 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 from googleapiclient.discovery import build
 
-logger = logging.getLogger(__name__)
-
 from connectors.google_auth import get_google_credentials
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/calendar", tags=["calendar"])
 

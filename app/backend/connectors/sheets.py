@@ -37,8 +37,7 @@ def sync_sheets_data() -> int:
 
         # Build lookup of already-synced sheets to skip unchanged ones
         existing = {
-            r["id"]: r["modified_time"]
-            for r in db.execute("SELECT id, modified_time FROM google_sheets").fetchall()
+            r["id"]: r["modified_time"] for r in db.execute("SELECT id, modified_time FROM google_sheets").fetchall()
         }
 
     if not rows:
@@ -48,8 +47,7 @@ def sync_sheets_data() -> int:
 
     # Filter to only sheets that are new or have a newer modified_time
     to_fetch = {
-        sid: df for sid, df in drive_lookup.items()
-        if sid not in existing or existing[sid] != df["modified_time"]
+        sid: df for sid, df in drive_lookup.items() if sid not in existing or existing[sid] != df["modified_time"]
     }
     skipped = len(drive_lookup) - len(to_fetch)
     if skipped:

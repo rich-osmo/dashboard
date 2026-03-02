@@ -9,7 +9,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 
 from database import get_db_connection, get_write_db, rebuild_fts_table
-from models import LongformCommentCreate, LongformCreate, LongformUpdate
+from models import LongformAIEditRequest, LongformCommentCreate, LongformCreate, LongformUpdate
 from utils.safe_sql import safe_update_query
 
 logger = logging.getLogger(__name__)
@@ -123,9 +123,7 @@ def list_posts(
 
         # FTS search
         if search:
-            fts_rows = db.execute(
-                "SELECT rowid FROM fts_longform WHERE fts_longform MATCH ?", (search,)
-            ).fetchall()
+            fts_rows = db.execute("SELECT rowid FROM fts_longform WHERE fts_longform MATCH ?", (search,)).fetchall()
             fts_ids = [r["rowid"] for r in fts_rows]
             if not fts_ids:
                 return []
@@ -273,6 +271,108 @@ def delete_comment(post_id: int, comment_id: int):
         db.execute("DELETE FROM longform_comments WHERE id = ?", (comment_id,))
         db.commit()
     return {"ok": True}
+
+
+# --- AI Editing ---
+
+
+def _build_editing_prompt(ctx: str, selected_text: str = "") -> str:
+    selection_context = ""
+    if selected_text:
+        selection_context = (
+            f"\nIMPORTANT: The user has selected this specific passage for editing:\n"
+            f'"""\n{selected_text}\n"""\n'
+            f"Focus your changes on this passage while keeping the rest of the document intact."
+        )
+
+    return (
+        f"You are a skilled writing editor and collaborator {ctx}. "
+        "You help improve draft documents by following editing instructions precisely.\n\n"
+        "Your response must be a JSON object with two keys:\n"
+        '- "revised_body": the complete revised document in Markdown format\n'
+        '- "commentary": 1-3 sentences explaining what you changed and why\n\n'
+        "Rules:\n"
+        "1. Return the ENTIRE document in revised_body, not just the changed portion\n"
+        "2. Preserve the overall structure, voice, and formatting unless asked to change it\n"
+        "3. Only change what the instruction asks for — do not rewrite unrelated sections\n"
+        "4. Keep the same Markdown formatting conventions as the original\n"
+        "5. If the instruction is about feedback only (e.g., 'what do you think?'), set "
+        "revised_body to the original unchanged text and put your feedback in commentary\n"
+        "6. Be concise in commentary — explain what changed, not why the original was bad\n"
+        f"{selection_context}\n"
+        "Respond with ONLY valid JSON. No markdown fences, no explanation outside the JSON."
+    )
+
+
+def _call_gemini_edit(
+    title: str,
+    body: str,
+    instruction: str,
+    selected_text: str = "",
+    history: list[dict] | None = None,
+) -> dict:
+    from app_config import get_prompt_context, get_secret
+
+    api_key = get_secret("GEMINI_API_KEY") or ""
+    if not api_key:
+        return {"revised_body": body, "commentary": "", "error": "Gemini API key not configured"}
+
+    from google import genai
+
+    client = genai.Client(api_key=api_key)
+    ctx = get_prompt_context()
+    system_prompt = _build_editing_prompt(ctx, selected_text)
+
+    # Truncate very long documents
+    body_text = body[-30000:] if len(body) > 30000 else body
+
+    user_message = f"Title: {title}\n\nDocument:\n{body_text}\n\nInstruction: {instruction}"
+    if history:
+        history_text = "\n".join(
+            f"Previous instruction: {h.get('instruction', '')}\nWhat was changed: {h.get('commentary', '')}"
+            for h in history[-3:]
+        )
+        user_message = f"Recent editing history:\n{history_text}\n\n{user_message}"
+
+    response = client.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=user_message,
+        config={
+            "system_instruction": system_prompt,
+            "temperature": 0.2,
+            "response_mime_type": "application/json",
+        },
+    )
+
+    parsed = json.loads(response.text)
+    return {
+        "revised_body": parsed.get("revised_body", body),
+        "commentary": parsed.get("commentary", ""),
+        "error": None,
+    }
+
+
+@router.post("/{post_id}/ai-edit")
+def ai_edit_post(post_id: int, req: LongformAIEditRequest):
+    """Use Gemini to edit the draft based on a natural language instruction."""
+    with get_db_connection(readonly=True) as db:
+        row = db.execute("SELECT id FROM longform_posts WHERE id = ?", (post_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Post not found")
+
+    try:
+        result = _call_gemini_edit(
+            title=req.title,
+            body=req.body,
+            instruction=req.instruction,
+            selected_text=req.selected_text,
+            history=req.history,
+        )
+    except Exception as e:
+        logger.error("AI edit failed: %s", e)
+        result = {"revised_body": req.body, "commentary": "", "error": str(e)}
+
+    return result
 
 
 # --- Import from Claude session ---

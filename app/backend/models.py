@@ -153,3 +153,11 @@ class LongformUpdate(BaseModel):
 class LongformCommentCreate(BaseModel):
     text: str
     is_thought: bool = False
+
+
+class LongformAIEditRequest(BaseModel):
+    instruction: str
+    body: str
+    title: str = ""
+    selected_text: str = ""
+    history: list[dict] = []

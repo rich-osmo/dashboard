@@ -94,7 +94,12 @@ def sync_ramp_transactions(org_only: bool = False, from_date: str | None = None)
         cutoff_iso = cutoff.strftime("%Y-%m-%dT00:00:00Z")
 
     org_names = _get_org_names() if org_only else None
-    logger.info("Ramp sync: org_only=%s, org members=%d, from=%s", org_only, len(org_names) if org_names else -1, cutoff_iso)
+    logger.info(
+        "Ramp sync: org_only=%s, org members=%d, from=%s",
+        org_only,
+        len(org_names) if org_names else -1,
+        cutoff_iso,
+    )
 
     # Phase 1: Fetch all transactions from API (no DB connection held)
     all_transactions = []

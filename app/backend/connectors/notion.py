@@ -306,7 +306,9 @@ def sync_notion_pages(limit: int = 50) -> int:
     with get_db_connection(readonly=True) as db:
         existing = {
             r["id"]: (r["last_edited_time"], r["relevance_score"], r["relevance_reason"], r["snippet"])
-            for r in db.execute("SELECT id, last_edited_time, relevance_score, relevance_reason, snippet FROM notion_pages").fetchall()
+            for r in db.execute(
+                "SELECT id, last_edited_time, relevance_score, relevance_reason, snippet FROM notion_pages"
+            ).fetchall()
         }
 
     changed_pages = [p for p in pages if p["id"] not in existing or existing[p["id"]][0] != p["last_edited_time"]]

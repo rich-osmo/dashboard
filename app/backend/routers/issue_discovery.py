@@ -2,6 +2,7 @@ import json
 import logging
 import threading
 from datetime import datetime
+from difflib import SequenceMatcher
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
@@ -39,14 +40,14 @@ class ProposalOverrides(BaseModel):
 def _get_last_scan_timestamp() -> Optional[str]:
     with get_db_connection(readonly=True) as db:
         row = db.execute(
-            "SELECT started_at FROM issue_discovery_runs "
-            "WHERE status = 'completed' ORDER BY started_at DESC LIMIT 1"
+            "SELECT started_at FROM issue_discovery_runs WHERE status = 'completed' ORDER BY started_at DESC LIMIT 1"
         ).fetchone()
         return row["started_at"] if row else None
 
 
 def _build_discovery_context(db, since: Optional[str]) -> dict:
     """Gather recent data from all sources, filtered by since timestamp."""
+
     # Build time filters — parameterised per-column
     def time_clause(col: str) -> tuple[str, list]:
         if since:
@@ -181,21 +182,37 @@ def _build_discovery_context(db, since: Optional[str]) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _is_duplicate_title(title: str, existing_titles: list[str], threshold: float = 0.6) -> bool:
+    """Check if a title is a fuzzy duplicate of any existing title."""
+    title_lower = title.lower().strip()
+    for existing in existing_titles:
+        existing_lower = existing.lower().strip()
+        # Exact match
+        if title_lower == existing_lower:
+            return True
+        # Fuzzy match
+        if SequenceMatcher(None, title_lower, existing_lower).ratio() >= threshold:
+            return True
+        # Substring containment (either direction)
+        if len(title_lower) > 10 and len(existing_lower) > 10:
+            if title_lower in existing_lower or existing_lower in title_lower:
+                return True
+    return False
+
+
 def _build_discovery_prompt(existing_titles: list[str], rejected_titles: list[str]) -> str:
     ctx = get_prompt_context()
 
     existing_section = ""
     if existing_titles:
-        existing_section = (
-            "\n\nEXISTING ISSUES (do NOT suggest duplicates of these):\n"
-            + "\n".join(f"- {t}" for t in existing_titles[:50])
+        existing_section = "\n\nEXISTING ISSUES (do NOT suggest duplicates of these):\n" + "\n".join(
+            f"- {t}" for t in existing_titles[:50]
         )
 
     rejected_section = ""
     if rejected_titles:
-        rejected_section = (
-            "\n\nPREVIOUSLY REJECTED (do NOT suggest these again):\n"
-            + "\n".join(f"- {t}" for t in rejected_titles[:50])
+        rejected_section = "\n\nPREVIOUSLY REJECTED (do NOT suggest these again):\n" + "\n".join(
+            f"- {t}" for t in rejected_titles[:50]
         )
 
     return f"""\
@@ -251,9 +268,7 @@ Return 5-20 items, sorted by priority. Respond with ONLY valid JSON — an array
 No markdown, no explanation, just the JSON array."""
 
 
-def _call_gemini_discovery(
-    context: dict, existing_titles: list[str], rejected_titles: list[str]
-) -> list[dict]:
+def _call_gemini_discovery(context: dict, existing_titles: list[str], rejected_titles: list[str]) -> list[dict]:
     api_key = get_secret("GEMINI_API_KEY") or ""
     if not api_key:
         return []
@@ -305,25 +320,58 @@ def _run_discovery(run_id: int):
         with get_db_connection(readonly=True) as db:
             context = _build_discovery_context(db, since)
 
-            existing = [
+            # All open issues (not done)
+            existing = [r["title"] for r in db.execute("SELECT title FROM issues WHERE status != 'done'").fetchall()]
+
+            # All completed issues (to prevent re-suggesting finished work)
+            done_issues = [r["title"] for r in db.execute("SELECT title FROM issues WHERE status = 'done'").fetchall()]
+
+            # ALL previously proposed titles (accepted OR rejected) from last 60 days
+            prior_proposals = [
                 r["title"]
-                for r in db.execute("SELECT title FROM issues WHERE status != 'done'").fetchall()
+                for r in db.execute(
+                    "SELECT pi.title FROM proposed_issues pi "
+                    "JOIN issue_discovery_runs idr ON pi.run_id = idr.id "
+                    "WHERE pi.status IN ('rejected', 'accepted') "
+                    "AND idr.started_at > datetime('now', '-60 days')"
+                ).fetchall()
             ]
 
-            rejected = [
+            # For the Gemini prompt: tell it about rejected AND accepted
+            rejected_for_prompt = [
                 r["title"]
                 for r in db.execute(
                     "SELECT pi.title FROM proposed_issues pi "
                     "JOIN issue_discovery_runs idr ON pi.run_id = idr.id "
                     "WHERE pi.status = 'rejected' "
-                    "AND idr.started_at > datetime('now', '-30 days')"
+                    "AND idr.started_at > datetime('now', '-60 days')"
                 ).fetchall()
             ]
+
+            # Combined list for post-generation fuzzy dedup
+            all_known_titles = list(set(existing + done_issues + prior_proposals))
         _discovery_steps_done.append("gathering")
 
         # Call Gemini
         _discovery_step = "analyzing"
-        proposals = _call_gemini_discovery(context, existing, rejected)
+        proposals = _call_gemini_discovery(context, existing + done_issues, rejected_for_prompt)
+
+        # Post-generation dedup: filter out proposals that fuzzy-match known titles
+        filtered = []
+        seen_in_batch: list[str] = []
+        for p in proposals:
+            title = p.get("title", "")
+            if not title:
+                continue
+            if _is_duplicate_title(title, all_known_titles):
+                logger.info("Filtered duplicate proposal: %s", title)
+                continue
+            if _is_duplicate_title(title, seen_in_batch):
+                logger.info("Filtered intra-batch duplicate: %s", title)
+                continue
+            filtered.append(p)
+            seen_in_batch.append(title)
+        proposals = filtered
         _discovery_steps_done.append("analyzing")
 
         # Store proposals
@@ -361,8 +409,7 @@ def _run_discovery(run_id: int):
         logger.exception("Issue discovery failed")
         with get_write_db() as db:
             db.execute(
-                "UPDATE issue_discovery_runs SET status = 'failed', "
-                "completed_at = ?, error = ? WHERE id = ?",
+                "UPDATE issue_discovery_runs SET status = 'failed', completed_at = ?, error = ? WHERE id = ?",
                 (datetime.now().isoformat(), str(e)[:500], run_id),
             )
             db.commit()
@@ -411,8 +458,7 @@ def get_proposals(
     with get_db_connection(readonly=True) as db:
         if run_id is None:
             row = db.execute(
-                "SELECT id FROM issue_discovery_runs "
-                "WHERE status = 'completed' ORDER BY completed_at DESC LIMIT 1"
+                "SELECT id FROM issue_discovery_runs WHERE status = 'completed' ORDER BY completed_at DESC LIMIT 1"
             ).fetchone()
             if not row:
                 return {"proposals": [], "run_id": None, "run": None}
@@ -462,8 +508,7 @@ def accept_proposal(proposal_id: int, overrides: Optional[ProposalOverrides] = N
 
         # Create the real issue
         cursor = db.execute(
-            "INSERT INTO issues (title, description, priority, tshirt_size, status) "
-            "VALUES (?, ?, ?, ?, 'open')",
+            "INSERT INTO issues (title, description, priority, tshirt_size, status) VALUES (?, ?, ?, ?, 'open')",
             (title, description, priority, tshirt_size),
         )
         issue_id = cursor.lastrowid

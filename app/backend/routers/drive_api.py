@@ -37,13 +37,10 @@ def get_all_drive_files(
     """Return all synced Drive files, newest first, with pagination."""
     with get_db_connection(readonly=True) as db:
         rows = db.execute(
-            "SELECT * FROM drive_files WHERE trashed = 0 "
-            "ORDER BY modified_time DESC LIMIT ? OFFSET ?",
+            "SELECT * FROM drive_files WHERE trashed = 0 ORDER BY modified_time DESC LIMIT ? OFFSET ?",
             (limit, offset),
         ).fetchall()
-        total = db.execute(
-            "SELECT COUNT(*) as c FROM drive_files WHERE trashed = 0"
-        ).fetchone()["c"]
+        total = db.execute("SELECT COUNT(*) as c FROM drive_files WHERE trashed = 0").fetchone()["c"]
     return {
         "items": [dict(r) for r in rows],
         "total": total,

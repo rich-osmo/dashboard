@@ -4,13 +4,13 @@ import re
 from datetime import datetime
 from typing import Optional
 
-logger = logging.getLogger(__name__)
-
 from fastapi import APIRouter, HTTPException, Query
 
 from database import get_db_connection, get_write_db, rebuild_fts_table
 from models import IssueCreate, IssueUpdate
 from utils.safe_sql import safe_update_query
+
+logger = logging.getLogger(__name__)
 
 ISSUE_ALLOWED_COLUMNS = {"title", "description", "priority", "tshirt_size", "status", "project_id", "due_date"}
 

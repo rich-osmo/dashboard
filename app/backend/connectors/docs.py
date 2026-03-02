@@ -40,8 +40,7 @@ def sync_docs_data() -> int:
 
         # Build lookup of already-synced docs to skip unchanged ones
         existing = {
-            r["id"]: r["modified_time"]
-            for r in db.execute("SELECT id, modified_time FROM google_docs").fetchall()
+            r["id"]: r["modified_time"] for r in db.execute("SELECT id, modified_time FROM google_docs").fetchall()
         }
 
     if not rows:
@@ -51,8 +50,7 @@ def sync_docs_data() -> int:
 
     # Filter to only docs that are new or have a newer modified_time
     to_fetch = {
-        did: df for did, df in drive_lookup.items()
-        if did not in existing or existing[did] != df["modified_time"]
+        did: df for did, df in drive_lookup.items() if did not in existing or existing[did] != df["modified_time"]
     }
     skipped = len(drive_lookup) - len(to_fetch)
     if skipped:

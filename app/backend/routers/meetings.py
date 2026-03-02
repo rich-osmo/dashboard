@@ -162,9 +162,7 @@ def get_all_granola(
                LIMIT ? OFFSET ?""",
             (limit, offset),
         ).fetchall()
-        total = db.execute(
-            "SELECT COUNT(*) as c FROM granola_meetings WHERE valid_meeting = 1"
-        ).fetchone()["c"]
+        total = db.execute("SELECT COUNT(*) as c FROM granola_meetings WHERE valid_meeting = 1").fetchone()["c"]
     return {
         "items": [_row_to_meeting(r) for r in rows],
         "total": total,

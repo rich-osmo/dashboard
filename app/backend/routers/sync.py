@@ -7,13 +7,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
-
 from fastapi import APIRouter, BackgroundTasks
 
 from connectors.markdown import parse_meeting_files
 from database import batch_upsert, get_db_connection, get_write_db
 from utils.person_matching import rebuild_from_db
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/sync", tags=["sync"])
 
@@ -26,7 +26,8 @@ _sync_cancel = threading.Event()
 def _update_sync_state(source: str, status: str, error: str | None, items: int, elapsed: float | None = None):
     with get_write_db() as db:
         db.execute(
-            """INSERT INTO sync_state (source, last_sync_at, last_sync_status, last_error, items_synced, duration_seconds)
+            """INSERT INTO sync_state
+               (source, last_sync_at, last_sync_status, last_error, items_synced, duration_seconds)
                VALUES (?, ?, ?, ?, ?, ?)
                ON CONFLICT(source) DO UPDATE SET
                  last_sync_at=excluded.last_sync_at,
@@ -34,7 +35,14 @@ def _update_sync_state(source: str, status: str, error: str | None, items: int, 
                  last_error=excluded.last_error,
                  items_synced=excluded.items_synced,
                  duration_seconds=excluded.duration_seconds""",
-            (source, datetime.now().isoformat(), status, error, items, round(elapsed, 1) if elapsed is not None else None),
+            (
+                source,
+                datetime.now().isoformat(),
+                status,
+                error,
+                items,
+                round(elapsed, 1) if elapsed is not None else None,
+            ),
         )
         db.commit()
     if elapsed is not None:

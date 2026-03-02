@@ -48,6 +48,7 @@ import type {
   LongformPost,
   LongformPostDetail,
   LongformComment,
+  LongformAIEditResponse,
   ClaudeSession,
   ClaudeSessionContent,
   Persona,
@@ -604,6 +605,20 @@ export function useCreateLongformFromSession() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['longform'] });
     },
+  });
+}
+
+export function useAIEditLongform() {
+  return useMutation({
+    mutationFn: ({ postId, ...req }: {
+      postId: number;
+      instruction: string;
+      body: string;
+      title?: string;
+      selected_text?: string;
+      history?: { instruction: string; commentary: string }[];
+    }) =>
+      api.post<LongformAIEditResponse>(`/longform/${postId}/ai-edit`, req),
   });
 }
 

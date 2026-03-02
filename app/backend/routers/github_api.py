@@ -6,10 +6,10 @@ from typing import Optional
 import httpx
 from fastapi import APIRouter, HTTPException, Query
 
-logger = logging.getLogger(__name__)
-
 from config import get_github_repo
 from database import get_db_connection
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/github", tags=["github"])
 
@@ -78,9 +78,7 @@ def _parse_search_item(item: dict) -> dict:
 def _filter_dismissed(items: list[dict]) -> list[dict]:
     """Remove dismissed GitHub items."""
     with get_db_connection(readonly=True) as db:
-        rows = db.execute(
-            "SELECT item_id FROM dismissed_dashboard_items WHERE source = 'github'"
-        ).fetchall()
+        rows = db.execute("SELECT item_id FROM dismissed_dashboard_items WHERE source = 'github'").fetchall()
         dismissed = {r["item_id"] for r in rows}
     return [i for i in items if str(i["number"]) not in dismissed]
 
@@ -98,17 +96,13 @@ def get_all_github_prs(
             "SELECT * FROM github_pull_requests ORDER BY updated_at DESC LIMIT ? OFFSET ?",
             (limit, offset),
         ).fetchall()
-        total = db.execute(
-            "SELECT COUNT(*) as c FROM github_pull_requests"
-        ).fetchone()["c"]
+        total = db.execute("SELECT COUNT(*) as c FROM github_pull_requests").fetchone()["c"]
 
     items = []
     for r in rows:
         d = dict(r)
         d["labels"] = _json.loads(d.pop("labels_json", "[]") or "[]")
-        d["requested_reviewers"] = _json.loads(
-            d.pop("requested_reviewers_json", "[]") or "[]"
-        )
+        d["requested_reviewers"] = _json.loads(d.pop("requested_reviewers_json", "[]") or "[]")
         d["draft"] = bool(d.get("draft"))
         d["review_requested"] = bool(d.get("review_requested"))
         items.append(d)

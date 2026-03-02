@@ -280,7 +280,7 @@ def google_auth():
         _clear_sync_errors(_AUTH_TO_SYNC.get("google", []))
         _clear_sync_errors(_AUTH_TO_SYNC.get("google_drive", []))
         return {"status": "authenticated"}
-    except Exception as e:
+    except Exception:
         logger.exception("Google OAuth flow failed")
         return {"status": "error", "error": "OAuth flow failed"}
 

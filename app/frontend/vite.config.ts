@@ -8,7 +8,7 @@ export default defineConfig({
       output: {
         manualChunks: {
           'xterm': ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-serialize', '@xterm/addon-web-links'],
-          'markdown': ['react-markdown'],
+          'markdown': ['react-markdown', 'remark-gfm'],
           'vendor': ['react', 'react-dom', 'react-router-dom', '@tanstack/react-query'],
         },
       },

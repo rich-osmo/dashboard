@@ -5,9 +5,9 @@ import logging
 
 from fastapi import APIRouter, Query
 
-logger = logging.getLogger(__name__)
-
 from database import get_db_connection
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/search", tags=["search"])
 

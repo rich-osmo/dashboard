@@ -804,6 +804,14 @@ export interface LongformPostDetail extends LongformPost {
   thoughts: LongformComment[];
 }
 
+// --- Longform AI Edit ---
+
+export interface LongformAIEditResponse {
+  revised_body: string;
+  commentary: string;
+  error: string | null;
+}
+
 // --- Claude Sessions ---
 
 export interface ClaudeSession {

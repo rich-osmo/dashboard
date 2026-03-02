@@ -9,6 +9,7 @@ import {
   useLongformTags,
   useCreateLongformComment,
   useDeleteLongformComment,
+  useAIEditLongform,
 } from '../api/hooks';
 import type { LongformComment } from '../api/types';
 import { MarkdownRenderer } from '../components/shared/MarkdownRenderer';
@@ -39,8 +40,15 @@ function PostDetail({
   const [tagInput, setTagInput] = useState('');
   const [showTagDropdown, setShowTagDropdown] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState(false);
+  const [showAIPanel, setShowAIPanel] = useState(false);
+  const [aiHistory, setAIHistory] = useState<
+    { instruction: string; commentary: string; revised_body: string }[]
+  >([]);
+  const [aiInstruction, setAIInstruction] = useState('');
+  const [selectedText, setSelectedText] = useState('');
   const titleRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const aiEdit = useAIEditLongform();
 
   // Sync local state when post loads
   const postTitle = post?.title;
@@ -129,6 +137,68 @@ function PostDetail({
       deleteComment.mutate({ postId: post.id, commentId });
     },
     [post, deleteComment],
+  );
+
+  const handleTextSelect = useCallback(() => {
+    if (bodyRef.current) {
+      const start = bodyRef.current.selectionStart;
+      const end = bodyRef.current.selectionEnd;
+      setSelectedText(start !== end ? editBody.substring(start, end) : '');
+    }
+  }, [editBody]);
+
+  const handleAIEdit = useCallback(() => {
+    if (!post || !aiInstruction.trim()) return;
+
+    const historyForContext = aiHistory.slice(-3).map((h) => ({
+      instruction: h.instruction,
+      commentary: h.commentary,
+    }));
+
+    aiEdit.mutate(
+      {
+        postId: post.id,
+        instruction: aiInstruction.trim(),
+        body: editBody,
+        title: editTitle,
+        selected_text: selectedText,
+        history: historyForContext,
+      },
+      {
+        onSuccess: (result) => {
+          if (!result.error) {
+            setAIHistory((prev) => [
+              ...prev,
+              {
+                instruction: aiInstruction.trim(),
+                commentary: result.commentary,
+                revised_body: result.revised_body,
+              },
+            ]);
+          }
+          setAIInstruction('');
+          setSelectedText('');
+        },
+      },
+    );
+  }, [post, aiInstruction, editBody, editTitle, selectedText, aiHistory, aiEdit]);
+
+  const handleApplyAIEdit = useCallback(
+    (revisedBody: string) => {
+      setEditBody(revisedBody);
+      if (post) {
+        updatePost.mutate({ id: post.id, body: revisedBody });
+      }
+    },
+    [post, updatePost],
+  );
+
+  const handleSaveAsThought = useCallback(
+    (text: string) => {
+      if (!post) return;
+      createComment.mutate({ postId: post.id, text: `[AI] ${text}`, is_thought: true });
+    },
+    [post, createComment],
   );
 
   const filteredTags = (allTags || []).filter(
@@ -250,6 +320,14 @@ function PostDetail({
         <button className={viewMode === 'split' ? 'active' : ''} onClick={() => setViewMode('split')}>
           Split
         </button>
+        {post.status === 'draft' && (
+          <button
+            className={`longform-ai-toggle ${showAIPanel ? 'active' : ''}`}
+            onClick={() => setShowAIPanel((v) => !v)}
+          >
+            AI Editor
+          </button>
+        )}
       </div>
 
       <div className={`longform-editor-area ${viewMode}`}>
@@ -260,6 +338,8 @@ function PostDetail({
             value={editBody}
             onChange={(e) => setEditBody(e.target.value)}
             onBlur={handleBodyBlur}
+            onSelect={handleTextSelect}
+            onMouseUp={handleTextSelect}
             placeholder="Write your post in Markdown..."
           />
         )}
@@ -269,6 +349,74 @@ function PostDetail({
           </div>
         )}
       </div>
+
+      {/* AI Editor Panel */}
+      {showAIPanel && post.status === 'draft' && (
+        <div className="longform-ai-panel">
+          <h3>AI Editor</h3>
+
+          {aiHistory.length > 0 && (
+            <div className="longform-ai-history">
+              {aiHistory.map((entry, i) => (
+                <div key={i} className="longform-ai-exchange">
+                  <div className="longform-ai-instruction">{entry.instruction}</div>
+                  <div className="longform-ai-response">
+                    <MarkdownRenderer content={entry.commentary} />
+                    <div className="longform-ai-actions">
+                      <button onClick={() => handleApplyAIEdit(entry.revised_body)}>
+                        Apply Changes
+                      </button>
+                      <button onClick={() => handleSaveAsThought(entry.commentary)}>
+                        Save as Thought
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {selectedText && (
+            <div className="longform-ai-selection">
+              Selected: &ldquo;
+              {selectedText.length > 80 ? selectedText.slice(0, 80) + '...' : selectedText}
+              &rdquo;
+            </div>
+          )}
+
+          <div className="longform-ai-input">
+            <input
+              value={aiInstruction}
+              onChange={(e) => setAIInstruction(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleAIEdit();
+                }
+              }}
+              placeholder={
+                selectedText
+                  ? 'How should I edit the selected text?'
+                  : "How should I edit this draft? (e.g., 'make the intro more compelling')"
+              }
+              disabled={aiEdit.isPending}
+            />
+            <button onClick={handleAIEdit} disabled={!aiInstruction.trim() || aiEdit.isPending}>
+              {aiEdit.isPending ? 'Editing...' : 'Edit'}
+            </button>
+          </div>
+
+          {aiEdit.data?.error && (
+            <div className="longform-ai-error">{aiEdit.data.error}</div>
+          )}
+
+          {aiHistory.length > 0 && (
+            <button className="longform-ai-clear" onClick={() => setAIHistory([])}>
+              Clear history
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Comments */}
       <div className="longform-comments-section">
