@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query
 from googleapiclient.discovery import build
 
 from connectors.google_auth import get_google_credentials
+from models import CalendarEventCreate, CalendarEventUpdate, CalendarRSVP
 
 logger = logging.getLogger(__name__)
 
@@ -101,3 +102,130 @@ def get_event(event_id: str):
         raise HTTPException(status_code=404, detail="Event not found")
 
     return _event_to_dict(event)
+
+
+# --- Write endpoints ---
+
+
+@router.post("/events")
+def create_event(event: CalendarEventCreate):
+    """Create a new calendar event."""
+    service = _get_service()
+    body: dict = {"summary": event.summary}
+
+    if event.all_day:
+        body["start"] = {"date": event.start_time[:10]}
+        body["end"] = {"date": event.end_time[:10]}
+    else:
+        body["start"] = {"dateTime": event.start_time}
+        body["end"] = {"dateTime": event.end_time}
+
+    if event.description:
+        body["description"] = event.description
+    if event.location:
+        body["location"] = event.location
+    if event.attendees:
+        body["attendees"] = [{"email": e} for e in event.attendees]
+
+    try:
+        result = (
+            service.events()
+            .insert(
+                calendarId="primary",
+                body=body,
+                sendNotifications=event.send_notifications,
+            )
+            .execute()
+        )
+    except Exception as e:
+        logger.error("Failed to create event: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to create event")
+    return _event_to_dict(result)
+
+
+@router.patch("/events/{event_id}")
+def update_event(event_id: str, event: CalendarEventUpdate):
+    """Update an existing calendar event (partial update)."""
+    service = _get_service()
+    body: dict = {}
+    if event.summary is not None:
+        body["summary"] = event.summary
+    if event.description is not None:
+        body["description"] = event.description
+    if event.location is not None:
+        body["location"] = event.location
+    if event.start_time is not None:
+        body["start"] = {"dateTime": event.start_time}
+    if event.end_time is not None:
+        body["end"] = {"dateTime": event.end_time}
+    if event.attendees is not None:
+        body["attendees"] = [{"email": e} for e in event.attendees]
+
+    try:
+        result = (
+            service.events()
+            .patch(
+                calendarId="primary",
+                eventId=event_id,
+                body=body,
+                sendNotifications=event.send_notifications,
+            )
+            .execute()
+        )
+    except Exception as e:
+        logger.error("Failed to update event: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to update event")
+    return _event_to_dict(result)
+
+
+@router.delete("/events/{event_id}")
+def delete_event(event_id: str, send_notifications: bool = Query(True)):
+    """Delete a calendar event."""
+    service = _get_service()
+    try:
+        service.events().delete(
+            calendarId="primary",
+            eventId=event_id,
+            sendNotifications=send_notifications,
+        ).execute()
+    except Exception as e:
+        logger.error("Failed to delete event: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to delete event")
+    return {"ok": True, "event_id": event_id}
+
+
+@router.post("/events/{event_id}/rsvp")
+def rsvp_event(event_id: str, rsvp: CalendarRSVP):
+    """RSVP to a calendar event (accepted/declined/tentative)."""
+    service = _get_service()
+    try:
+        event = service.events().get(calendarId="primary", eventId=event_id).execute()
+    except Exception as e:
+        logger.error("Event not found: %s", e)
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    attendees = event.get("attendees", [])
+    updated = False
+    for a in attendees:
+        if a.get("self"):
+            a["responseStatus"] = rsvp.response
+            updated = True
+            break
+
+    if not updated:
+        raise HTTPException(status_code=400, detail="You are not an attendee of this event")
+
+    try:
+        result = (
+            service.events()
+            .patch(
+                calendarId="primary",
+                eventId=event_id,
+                body={"attendees": attendees},
+            )
+            .execute()
+        )
+    except Exception as e:
+        logger.error("Failed to RSVP: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to RSVP")
+    return _event_to_dict(result)

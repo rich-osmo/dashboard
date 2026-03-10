@@ -78,6 +78,31 @@ def _search_notes(db, fts_query: str, limit: int) -> list[dict]:
 
 
 def _search_granola(db, fts_query: str, limit: int) -> list[dict]:
+    # Search the new provider-agnostic FTS table first, fall back to legacy
+    try:
+        rows = db.execute(
+            """SELECT mne.id, mne.title, mne.created_at, mne.person_id,
+                      mne.external_link, mne.provider,
+                      p.name as person_name,
+                      highlight(fts_meeting_notes_ext, 0, '<mark>', '</mark>') as title_hl,
+                      snippet(fts_meeting_notes_ext, 1, '<mark>', '</mark>', '...', 40) as summary_snippet,
+                      rank
+               FROM fts_meeting_notes_ext
+               JOIN meeting_notes_external mne ON mne.rowid = fts_meeting_notes_ext.rowid
+               LEFT JOIN people p ON mne.person_id = p.id
+               WHERE fts_meeting_notes_ext MATCH ? AND mne.valid_meeting = 1
+               ORDER BY rank
+               LIMIT ?""",
+            (fts_query, limit),
+        ).fetchall()
+        results = [dict(r) for r in rows]
+        # Add granola_link alias for backward compat
+        for r in results:
+            r["granola_link"] = r.get("external_link")
+        return results
+    except Exception:
+        pass
+    # Fallback to legacy fts_granola
     try:
         rows = db.execute(
             """SELECT g.id, g.title, g.created_at, g.person_id, g.granola_link,

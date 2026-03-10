@@ -19,7 +19,7 @@ import {
   useDeletePersonConnection,
 } from '../api/hooks';
 import { MarkdownRenderer } from '../components/shared/MarkdownRenderer';
-import type { MeetingFile, GranolaMeeting, OneOnOneNote, Note, PersonLink, PersonAttribute, PersonConnection } from '../api/types';
+import type { MeetingFile, MeetingNote, OneOnOneNote, Note, PersonLink, PersonAttribute, PersonConnection } from '../api/types';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { sanitizeHtml } from '../utils/sanitize';
 
@@ -27,56 +27,59 @@ type UnifiedMeeting = {
   date: string;
   title: string;
   summary: string;
-  granola_link?: string;
+  external_link?: string;
+  notes_provider?: string;
   action_items?: string[];
   content?: string;
-  granola_html?: string;
-  source: 'file' | 'granola' | 'manual';
+  summary_html?: string;
+  source: string;
   manualNote?: OneOnOneNote;
 };
 
 function unifyMeetings(
   files: MeetingFile[],
-  granola: GranolaMeeting[],
+  meetingNotes: MeetingNote[],
   manualNotes: OneOnOneNote[]
 ): UnifiedMeeting[] {
   const meetings: UnifiedMeeting[] = [];
 
-  // Index granola meetings by date for cross-referencing
-  const granolaByDate = new Map<string, GranolaMeeting>();
-  for (const g of granola) {
-    const gDate = g.created_at?.split('T')[0];
-    if (gDate) granolaByDate.set(gDate, g);
+  // Index meeting notes by date for cross-referencing
+  const notesByDate = new Map<string, MeetingNote>();
+  for (const n of meetingNotes) {
+    const nDate = n.created_at?.split('T')[0];
+    if (nDate) notesByDate.set(nDate, n);
   }
 
   for (const f of files) {
-    const matchingGranola = granolaByDate.get(f.meeting_date);
+    const matchingNote = notesByDate.get(f.meeting_date);
     meetings.push({
       date: f.meeting_date,
       title: f.title,
       summary: f.summary,
-      granola_link: f.granola_link || undefined,
+      external_link: matchingNote?.external_link || matchingNote?.granola_link || undefined,
+      notes_provider: matchingNote?.provider,
       action_items: f.action_items_json ? JSON.parse(f.action_items_json) : [],
       content: f.content_markdown,
-      granola_html: matchingGranola?.panel_summary_html || undefined,
+      summary_html: matchingNote?.summary_html || matchingNote?.panel_summary_html || undefined,
       source: 'file',
     });
   }
 
   const usedDates = new Set(files.map((f) => f.meeting_date));
 
-  for (const g of granola) {
-    const gDate = g.created_at?.split('T')[0];
-    if (gDate && !usedDates.has(gDate)) {
+  for (const n of meetingNotes) {
+    const nDate = n.created_at?.split('T')[0];
+    if (nDate && !usedDates.has(nDate)) {
       meetings.push({
-        date: gDate,
-        title: g.title,
-        summary: g.panel_summary_plain || '',
-        granola_link: g.granola_link || undefined,
-        granola_html: g.panel_summary_html || undefined,
-        source: 'granola',
+        date: nDate,
+        title: n.title,
+        summary: n.summary_plain || n.panel_summary_plain || '',
+        external_link: n.external_link || n.granola_link || undefined,
+        notes_provider: n.provider,
+        summary_html: n.summary_html || n.panel_summary_html || undefined,
+        source: n.provider || 'notes',
       });
-      usedDates.add(gDate);
+      usedDates.add(nDate);
     }
   }
 
@@ -189,8 +192,8 @@ function MeetingModal({ meeting, linkedNotes, onClose }: {
 
   const myNotesMarkdown = meeting.manualNote?.content || '';
 
-  const meetingNotesMarkdown = meeting.granola_html
-    ? htmlToMarkdown(meeting.granola_html)
+  const meetingNotesMarkdown = meeting.summary_html
+    ? htmlToMarkdown(meeting.summary_html)
     : meeting.content || meeting.summary || '';
 
   return (
@@ -206,11 +209,11 @@ function MeetingModal({ meeting, linkedNotes, onClose }: {
           <h2>{meeting.title}</h2>
           <div style={{ color: 'var(--color-text-light)', fontSize: 'var(--text-sm)' }}>
             {formatDate(meeting.date)}
-            {meeting.granola_link && (
+            {meeting.external_link && (
               <>
                 {' '}&middot;{' '}
-                <a href={meeting.granola_link} target="_blank" rel="noopener noreferrer">
-                  Open in Granola
+                <a href={meeting.external_link} target="_blank" rel="noopener noreferrer">
+                  Open in {meeting.notes_provider ? meeting.notes_provider.charAt(0).toUpperCase() + meeting.notes_provider.slice(1) : 'Notes'}
                 </a>
               </>
             )}
@@ -241,16 +244,16 @@ function MeetingModal({ meeting, linkedNotes, onClose }: {
           )}
         </div>
 
-        {(meeting.granola_html || meeting.content || meeting.summary) && (
+        {(meeting.summary_html || meeting.content || meeting.summary) && (
           <div className="meeting-modal-section">
             <div className="meeting-modal-section-header">
               <h3>Meeting Notes</h3>
               {meetingNotesMarkdown && <CopyButton text={meetingNotesMarkdown} />}
             </div>
-            {meeting.granola_html ? (
+            {meeting.summary_html ? (
               <div
                 className="markdown-content"
-                dangerouslySetInnerHTML={{ __html: sanitizeHtml(meeting.granola_html) }}
+                dangerouslySetInnerHTML={{ __html: sanitizeHtml(meeting.summary_html) }}
               />
             ) : meeting.content ? (
               <MarkdownRenderer content={meeting.content} />
@@ -352,10 +355,10 @@ export function PersonPage() {
     () =>
       unifyMeetings(
         person?.meeting_files || [],
-        person?.granola_meetings || [],
+        person?.meeting_notes || person?.granola_meetings || [],
         person?.one_on_one_notes || []
       ),
-    [person?.meeting_files, person?.granola_meetings, person?.one_on_one_notes]
+    [person?.meeting_files, person?.meeting_notes, person?.granola_meetings, person?.one_on_one_notes]
   );
 
   // Deep-link: auto-open meeting modal from URL params (e.g. from search)
@@ -811,6 +814,32 @@ export function PersonPage() {
             </div>
           )}
 
+          {/* Linked longform posts */}
+          {(person.linked_longform_posts?.length ?? 0) > 0 && (
+            <div className="employee-section">
+              <h2>Writing</h2>
+              {person.linked_longform_posts.map((lp) => (
+                <div key={lp.id} className="note-item">
+                  <Link to={`/longform?postId=${lp.id}`} className="issue-title">
+                    {lp.title}
+                  </Link>
+                  <span className={`longform-status-badge ${lp.status}`} style={{ marginLeft: '0.5em' }}>
+                    {lp.status}
+                  </span>
+                  <span
+                    style={{
+                      color: 'var(--color-text-light)',
+                      marginLeft: '0.5em',
+                      fontSize: 'var(--text-xs)',
+                    }}
+                  >
+                    {lp.word_count} words
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Async notes with quick-add */}
           <div className="employee-section">
             <h2>Notes &amp; Follow-ups</h2>
@@ -1045,17 +1074,17 @@ export function PersonPage() {
                   >
                     {m.date} &mdash; {m.title}
                   </button>
-                  {m.granola_link && (
+                  {m.external_link && (
                     <>
                       {' '}
                       &middot;{' '}
-                      <a href={m.granola_link} target="_blank" rel="noopener noreferrer">
-                        Granola
+                      <a href={m.external_link} target="_blank" rel="noopener noreferrer">
+                        {m.notes_provider ? m.notes_provider.charAt(0).toUpperCase() + m.notes_provider.slice(1) : 'Notes'}
                       </a>
                     </>
                   )}
-                  {m.source === 'granola' && !m.granola_link && (
-                    <span style={{ color: 'var(--color-text-light)' }}> (Granola)</span>
+                  {m.source !== 'file' && m.source !== 'manual' && !m.external_link && (
+                    <span style={{ color: 'var(--color-text-light)' }}> ({m.notes_provider ? m.notes_provider.charAt(0).toUpperCase() + m.notes_provider.slice(1) : m.source})</span>
                   )}
                 </div>
 

@@ -8,6 +8,7 @@ from googleapiclient.discovery import build
 
 from connectors.google_auth import get_google_credentials
 from database import get_db_connection
+from models import SheetsAppendRows, SheetsCellUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -113,3 +114,73 @@ def get_sheet_values(
         raise HTTPException(status_code=500, detail="Failed to read sheet values")
 
     return {"values": result.get("values", []), "range": result.get("range", "")}
+
+
+# --- Write endpoints ---
+
+
+@router.post("/{sheet_id}/append")
+def append_rows(sheet_id: str, body: SheetsAppendRows):
+    """Append rows to a Google Sheet."""
+    try:
+        creds = get_google_credentials()
+        service = build("sheets", "v4", credentials=creds)
+    except Exception as e:
+        logger.error("Sheets not authenticated: %s", e)
+        raise HTTPException(status_code=503, detail="Sheets not authenticated")
+
+    try:
+        result = (
+            service.spreadsheets()
+            .values()
+            .append(
+                spreadsheetId=sheet_id,
+                range=body.range,
+                valueInputOption="USER_ENTERED",
+                body={"values": body.values},
+            )
+            .execute()
+        )
+    except Exception as e:
+        logger.error("Failed to append rows: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to append rows")
+
+    updates = result.get("updates", {})
+    return {
+        "updated_range": updates.get("updatedRange", ""),
+        "updated_rows": updates.get("updatedRows", 0),
+        "updated_cells": updates.get("updatedCells", 0),
+    }
+
+
+@router.patch("/{sheet_id}/values")
+def update_cells(sheet_id: str, body: SheetsCellUpdate):
+    """Update specific cells in a Google Sheet."""
+    try:
+        creds = get_google_credentials()
+        service = build("sheets", "v4", credentials=creds)
+    except Exception as e:
+        logger.error("Sheets not authenticated: %s", e)
+        raise HTTPException(status_code=503, detail="Sheets not authenticated")
+
+    try:
+        result = (
+            service.spreadsheets()
+            .values()
+            .update(
+                spreadsheetId=sheet_id,
+                range=body.range,
+                valueInputOption="USER_ENTERED",
+                body={"values": body.values},
+            )
+            .execute()
+        )
+    except Exception as e:
+        logger.error("Failed to update cells: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to update cells")
+
+    return {
+        "updated_range": result.get("updatedRange", ""),
+        "updated_rows": result.get("updatedRows", 0),
+        "updated_cells": result.get("updatedCells", 0),
+    }

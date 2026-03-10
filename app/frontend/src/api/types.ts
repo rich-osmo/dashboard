@@ -67,10 +67,18 @@ export interface PersonDetail extends Person {
   role_content: string;
   direct_reports: { id: string; name: string; title: string }[];
   meeting_files: MeetingFile[];
-  granola_meetings: GranolaMeeting[];
+  meeting_notes: MeetingNote[];
+  granola_meetings: MeetingNote[]; // Legacy alias
   linked_notes: Note[];
   one_on_one_notes: OneOnOneNote[];
   linked_issues: Issue[];
+  linked_longform_posts: {
+    id: number;
+    title: string;
+    status: string;
+    word_count: number;
+    updated_at: string;
+  }[];
   links: PersonLink[];
   attributes: PersonAttribute[];
   connections: PersonConnection[];
@@ -84,7 +92,7 @@ export interface PersonDetail extends Person {
     date: string;
     title: string;
     summary: string;
-    source: 'file' | 'granola';
+    source: string;
   }[];
 }
 
@@ -238,17 +246,27 @@ export interface NotionPage {
   relevance_reason?: string;
 }
 
-export interface GranolaMeeting {
+// Provider-agnostic meeting note from any source (Granola, Notion, etc.)
+export interface MeetingNote {
   id: string;
+  provider: string;
   title: string;
   created_at: string;
+  updated_at?: string;
   attendees_json?: string;
+  summary_html?: string;
+  summary_plain?: string;
+  transcript_text?: string;
+  external_link?: string;
+  person_id?: string;
+  // Legacy aliases for backward compat
   panel_summary_html?: string;
   panel_summary_plain?: string;
-  transcript_text?: string;
   granola_link?: string;
-  person_id?: string;
 }
+
+// Legacy alias
+export type GranolaMeeting = MeetingNote;
 
 export interface MeetingFile {
   id: number;
@@ -507,8 +525,9 @@ export interface SearchResults {
 
 export interface MeetingWithContext {
   event_id: string | null;
-  granola_id: string | null;
-  source_type: 'calendar' | 'granola';
+  notes_id: string | null;
+  notes_provider: string | null;
+  source_type: 'calendar' | 'external';
   summary: string;
   start_time: string;
   end_time: string | null;
@@ -516,13 +535,20 @@ export interface MeetingWithContext {
   attendees_json?: string;
   html_link?: string;
   description?: string;
+  notes_title?: string;
+  notes_summary_html?: string;
+  notes_summary_plain?: string;
+  notes_link?: string;
+  notes_transcript?: string;
+  note_id?: number;
+  note_content?: string;
+  // Legacy aliases (backward compat)
+  granola_id?: string | null;
   granola_title?: string;
   granola_summary_html?: string;
   granola_summary_plain?: string;
   granola_link?: string;
   granola_transcript?: string;
-  note_id?: number;
-  note_content?: string;
 }
 
 export interface MeetingsResponse {
@@ -790,6 +816,7 @@ export interface LongformPost {
   body: string;
   status: 'draft' | 'published';
   tags: string[];
+  people: { id: string; name: string }[];
   word_count: number;
   comment_count: number;
   thought_count: number;
@@ -861,6 +888,8 @@ export interface UserProfile {
   github_repo?: string;
   skip_domains?: string[];
   news_topics?: string[];
+  meeting_notes_provider?: string;
+  notion_meeting_notes_database_id?: string;
 }
 
 export interface SetupStatus {
@@ -881,6 +910,8 @@ export interface ConnectorInfo {
   help_url: string | null;
   default_enabled: boolean;
   enabled: boolean;
+  capabilities: string[];
+  google_access_mode?: 'readonly' | 'readwrite';
 }
 
 export interface SecretStatus {

@@ -13,6 +13,7 @@ from googleapiclient.discovery import build
 from app_config import get_prompt_context, get_secret
 from connectors.google_auth import get_google_credentials
 from database import get_db_connection, get_write_db
+from models import GmailArchive, GmailDraftCreate, GmailDraftUpdate, GmailSend, GmailTrash
 from routers._ranking_cache import compute_items_hash
 
 logger = logging.getLogger(__name__)
@@ -180,6 +181,189 @@ def get_message(message_id: str):
         raise HTTPException(status_code=404, detail="Message not found")
 
     return _message_to_dict(msg, include_body=True)
+
+
+# --- Write endpoints ---
+
+
+def _build_mime_message(
+    to: str,
+    subject: str,
+    body: str,
+    cc: str | None = None,
+    bcc: str | None = None,
+    reply_to_message_id: str | None = None,
+) -> str:
+    """Build a raw base64url-encoded MIME message."""
+    from email.mime.text import MIMEText
+
+    message = MIMEText(body)
+    message["to"] = to
+    message["subject"] = subject
+    if cc:
+        message["cc"] = cc
+    if bcc:
+        message["bcc"] = bcc
+    if reply_to_message_id:
+        message["In-Reply-To"] = reply_to_message_id
+        message["References"] = reply_to_message_id
+
+    return base64.urlsafe_b64encode(message.as_bytes()).decode()
+
+
+@router.post("/send")
+def send_email(email: GmailSend):
+    """Send an email (new or reply)."""
+    service = _get_service()
+    raw = _build_mime_message(
+        email.to,
+        email.subject,
+        email.body,
+        cc=email.cc,
+        bcc=email.bcc,
+        reply_to_message_id=email.reply_to_message_id,
+    )
+    send_body: dict = {"raw": raw}
+    if email.reply_to_thread_id:
+        send_body["threadId"] = email.reply_to_thread_id
+
+    try:
+        result = service.users().messages().send(userId="me", body=send_body).execute()
+    except Exception as e:
+        logger.error("Failed to send email: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to send email")
+
+    return {
+        "id": result.get("id"),
+        "thread_id": result.get("threadId"),
+        "label_ids": result.get("labelIds", []),
+    }
+
+
+@router.get("/drafts")
+def list_drafts(max_results: int = Query(20, ge=1, le=100)):
+    """List email drafts."""
+    service = _get_service()
+    try:
+        results = service.users().drafts().list(userId="me", maxResults=max_results).execute()
+    except Exception as e:
+        logger.error("Failed to list drafts: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to list drafts")
+
+    drafts = []
+    for d in results.get("drafts", []):
+        try:
+            draft = (
+                service.users()
+                .drafts()
+                .get(userId="me", id=d["id"], format="metadata", metadataHeaders=["To", "Subject"])
+                .execute()
+            )
+            msg = draft.get("message", {})
+            headers = {h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])}
+            drafts.append(
+                {
+                    "id": d["id"],
+                    "message_id": msg.get("id", ""),
+                    "subject": headers.get("Subject", "(No subject)"),
+                    "to": headers.get("To", ""),
+                    "snippet": msg.get("snippet", ""),
+                }
+            )
+        except Exception:
+            continue
+
+    return {"count": len(drafts), "drafts": drafts}
+
+
+@router.post("/drafts")
+def create_draft(draft: GmailDraftCreate):
+    """Create an email draft."""
+    service = _get_service()
+    raw = _build_mime_message(draft.to, draft.subject, draft.body, cc=draft.cc, bcc=draft.bcc)
+
+    try:
+        result = service.users().drafts().create(userId="me", body={"message": {"raw": raw}}).execute()
+    except Exception as e:
+        logger.error("Failed to create draft: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to create draft")
+
+    return {"id": result.get("id"), "message_id": result.get("message", {}).get("id", "")}
+
+
+@router.patch("/drafts/{draft_id}")
+def update_draft(draft_id: str, draft: GmailDraftUpdate):
+    """Update an existing draft."""
+    service = _get_service()
+
+    # Fetch current draft to fill in unchanged fields
+    try:
+        current = service.users().drafts().get(userId="me", id=draft_id, format="full").execute()
+        msg = current.get("message", {})
+        headers = {h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])}
+    except Exception as e:
+        logger.error("Draft not found: %s", e)
+        raise HTTPException(status_code=404, detail="Draft not found")
+
+    to = draft.to or headers.get("To", "")
+    subject = draft.subject or headers.get("Subject", "")
+    body_text = draft.body if draft.body is not None else _extract_body(msg.get("payload", {}))
+    cc = draft.cc or headers.get("Cc")
+    bcc = draft.bcc or headers.get("Bcc")
+
+    raw = _build_mime_message(to, subject, body_text, cc=cc, bcc=bcc)
+
+    try:
+        result = service.users().drafts().update(userId="me", id=draft_id, body={"message": {"raw": raw}}).execute()
+    except Exception as e:
+        logger.error("Failed to update draft: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to update draft")
+
+    return {"id": result.get("id"), "message_id": result.get("message", {}).get("id", "")}
+
+
+@router.delete("/drafts/{draft_id}")
+def delete_draft(draft_id: str):
+    """Delete a draft."""
+    service = _get_service()
+    try:
+        service.users().drafts().delete(userId="me", id=draft_id).execute()
+    except Exception as e:
+        logger.error("Failed to delete draft: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to delete draft")
+    return {"ok": True, "draft_id": draft_id}
+
+
+@router.post("/archive")
+def archive_messages(body: GmailArchive):
+    """Archive messages by removing INBOX label."""
+    service = _get_service()
+    results = []
+    for msg_id in body.message_ids:
+        try:
+            service.users().messages().modify(
+                userId="me",
+                id=msg_id,
+                body={"removeLabelIds": ["INBOX"]},
+            ).execute()
+            results.append({"id": msg_id, "ok": True})
+        except Exception as e:
+            results.append({"id": msg_id, "ok": False, "error": str(e)})
+    return {"results": results}
+
+
+@router.post("/trash")
+def trash_messages(body: GmailTrash):
+    """Move messages to trash."""
+    service = _get_service()
+    results = []
+    for msg_id in body.message_ids:
+        try:
+            service.users().messages().trash(userId="me", id=msg_id).execute()
+            results.append({"id": msg_id, "ok": True})
+        except Exception as e:
+            results.append({"id": msg_id, "ok": False, "error": str(e)})
+    return {"results": results}
 
 
 # --- Gemini-ranked emails ---

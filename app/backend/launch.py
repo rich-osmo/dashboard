@@ -1,6 +1,7 @@
 """Launch the dashboard as a native Mac app with pywebview."""
 
 import logging
+import os
 import sys
 import threading
 import time
@@ -29,6 +30,12 @@ def start_server():
 
 
 if __name__ == "__main__":
+    # In PyInstaller bundle, set cwd to _MEIPASS so module imports resolve correctly
+    if getattr(sys, "_MEIPASS", None):
+        os.chdir(sys._MEIPASS)
+        if sys._MEIPASS not in sys.path:
+            sys.path.insert(0, sys._MEIPASS)
+
     setup_logging()
 
     # Start FastAPI in a background thread

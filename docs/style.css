@@ -1,0 +1,326 @@
+@import url('https://cdn.jsdelivr.net/gh/edwardtufte/et-book@gh-pages/et-book.css');
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --font-body: 'ET Book', Palatino, 'Palatino Linotype', 'Book Antiqua', Georgia, serif;
+  --font-mono: 'SF Mono', 'Fira Code', monospace;
+  --color-bg: #fffff8;
+  --color-text: #111111;
+  --color-text-muted: #555555;
+  --color-text-light: #888888;
+  --color-border: #e0ddd1;
+  --color-accent: #a00000;
+  --color-sidebar-bg: #f8f5eb;
+  --max-width: 960px;
+}
+
+html {
+  font-size: 17px;
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--color-text);
+  background: var(--color-bg);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --- Layout --- */
+
+.container {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* --- Hero --- */
+
+.hero {
+  text-align: center;
+  padding: 80px 24px 60px;
+}
+
+.hero-icon {
+  width: 96px;
+  height: 96px;
+  margin-bottom: 24px;
+}
+
+.hero h1 {
+  font-size: 2.4rem;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  margin-bottom: 12px;
+}
+
+.hero .tagline {
+  font-size: 1.2rem;
+  color: var(--color-text-muted);
+  max-width: 540px;
+  margin: 0 auto 32px;
+  font-style: italic;
+}
+
+.download-btn {
+  display: inline-block;
+  background: var(--color-accent);
+  color: #fff;
+  padding: 14px 36px;
+  font-family: var(--font-body);
+  font-size: 1.1rem;
+  text-decoration: none;
+  border-radius: 6px;
+  transition: opacity 0.15s;
+}
+
+.download-btn:hover {
+  opacity: 0.85;
+}
+
+.download-note {
+  margin-top: 12px;
+  font-size: 0.82rem;
+  color: var(--color-text-light);
+}
+
+/* --- Screenshots --- */
+
+.screenshots {
+  padding: 40px 0 60px;
+}
+
+.screenshot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 24px;
+}
+
+.screenshot-card {
+  background: var(--color-sidebar-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 24px;
+  text-align: center;
+}
+
+.screenshot-card .placeholder {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  background: var(--color-border);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-light);
+  font-style: italic;
+  margin-bottom: 12px;
+}
+
+.screenshot-card h3 {
+  font-size: 1rem;
+  font-weight: 400;
+  margin-bottom: 4px;
+}
+
+.screenshot-card p {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+/* --- Features --- */
+
+.features {
+  padding: 40px 0 60px;
+  border-top: 1px solid var(--color-border);
+}
+
+.features h2 {
+  font-size: 1.6rem;
+  font-weight: 400;
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 32px;
+}
+
+.feature-card h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.feature-card p {
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+/* --- How it works --- */
+
+.how-it-works {
+  padding: 40px 0 60px;
+  border-top: 1px solid var(--color-border);
+}
+
+.how-it-works h2 {
+  font-size: 1.6rem;
+  font-weight: 400;
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 32px;
+  text-align: center;
+}
+
+.step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: var(--color-accent);
+  color: #fff;
+  border-radius: 50%;
+  font-size: 1.1rem;
+  margin-bottom: 12px;
+}
+
+.steps h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.steps p {
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
+/* --- Philosophy --- */
+
+.philosophy {
+  padding: 40px 0 60px;
+  border-top: 1px solid var(--color-border);
+  text-align: center;
+}
+
+.philosophy h2 {
+  font-size: 1.6rem;
+  font-weight: 400;
+  margin-bottom: 16px;
+}
+
+.philosophy p {
+  font-size: 1rem;
+  color: var(--color-text-muted);
+  max-width: 600px;
+  margin: 0 auto 12px;
+}
+
+.badge-row {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  margin-top: 24px;
+  flex-wrap: wrap;
+}
+
+.badge {
+  display: inline-block;
+  padding: 6px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  background: var(--color-sidebar-bg);
+}
+
+/* --- Gatekeeper notice --- */
+
+.gatekeeper {
+  padding: 24px 0 40px;
+  text-align: center;
+}
+
+.gatekeeper details {
+  display: inline-block;
+  text-align: left;
+  max-width: 520px;
+}
+
+.gatekeeper summary {
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
+.gatekeeper .instructions {
+  margin-top: 12px;
+  padding: 16px;
+  background: var(--color-sidebar-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  line-height: 1.6;
+}
+
+.gatekeeper code {
+  font-family: var(--font-mono);
+  background: var(--color-bg);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 0.82rem;
+}
+
+/* --- Footer --- */
+
+.footer {
+  padding: 32px 0;
+  border-top: 1px solid var(--color-border);
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--color-text-light);
+}
+
+.footer a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.footer a:hover {
+  text-decoration: underline;
+}
+
+/* --- Responsive --- */
+
+@media (max-width: 640px) {
+  .hero h1 {
+    font-size: 1.8rem;
+  }
+
+  .steps {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+
+  .feature-grid {
+    grid-template-columns: 1fr;
+  }
+}

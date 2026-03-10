@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useMeetings, useUpsertMeetingNote, useDeleteMeetingNote, useDismissPrioritizedItem, useProfile, useAllGranola } from '../api/hooks';
+import { useMeetings, useUpsertMeetingNote, useDeleteMeetingNote, useDismissPrioritizedItem, useProfile, useAllMeetingNotes } from '../api/hooks';
 import type { MeetingWithContext } from '../api/types';
 import { useFocusNavigation } from '../hooks/useFocusNavigation';
 import { KeyboardHints } from '../components/shared/KeyboardHints';
@@ -120,9 +120,15 @@ function MeetingModal({
     return () => document.removeEventListener('keydown', handleKey);
   }, [onClose]);
 
-  const meetingNotesMarkdown = meeting.granola_summary_html
-    ? htmlToMarkdown(meeting.granola_summary_html)
-    : meeting.granola_summary_plain || '';
+  const summaryHtml = meeting.notes_summary_html || meeting.granola_summary_html;
+  const summaryPlain = meeting.notes_summary_plain || meeting.granola_summary_plain;
+  const notesLink = meeting.notes_link || meeting.granola_link;
+  const transcript = meeting.notes_transcript || meeting.granola_transcript;
+  const providerName = meeting.notes_provider ? meeting.notes_provider.charAt(0).toUpperCase() + meeting.notes_provider.slice(1) : 'Notes';
+
+  const meetingNotesMarkdown = summaryHtml
+    ? htmlToMarkdown(summaryHtml)
+    : summaryPlain || '';
 
   return (
     <div
@@ -147,15 +153,15 @@ function MeetingModal({
           >
             {formatMeetingDate(meeting.start_time)}
             {meeting.end_time && `, ${formatMeetingTime(meeting.start_time, meeting.end_time)}`}
-            {meeting.granola_link && (
+            {notesLink && (
               <>
                 {' '}&middot;{' '}
                 <a
-                  href={meeting.granola_link}
+                  href={notesLink}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  Open in Granola
+                  Open in {providerName}
                 </a>
               </>
             )}
@@ -184,30 +190,30 @@ function MeetingModal({
           </div>
         )}
 
-        {(meeting.granola_summary_html || meeting.granola_summary_plain) && (
+        {(summaryHtml || summaryPlain) && (
           <div className="meeting-modal-section">
             <div className="meeting-modal-section-header">
               <h3>Meeting Notes</h3>
               {meetingNotesMarkdown && <CopyButton text={meetingNotesMarkdown} />}
             </div>
-            {meeting.granola_summary_html ? (
+            {summaryHtml ? (
               <div
                 className="markdown-content"
-                dangerouslySetInnerHTML={{ __html: sanitizeHtml(meeting.granola_summary_html) }}
+                dangerouslySetInnerHTML={{ __html: sanitizeHtml(summaryHtml) }}
               />
             ) : (
               <div style={{ whiteSpace: 'pre-wrap' }}>
-                {meeting.granola_summary_plain}
+                {summaryPlain}
               </div>
             )}
           </div>
         )}
 
-        {meeting.granola_transcript && (
+        {transcript && (
           <div className="meeting-modal-section">
             <div className="meeting-modal-section-header">
               <h3>Transcript</h3>
-              <CopyButton text={meeting.granola_transcript} />
+              <CopyButton text={transcript} />
             </div>
             <div
               style={{
@@ -217,7 +223,7 @@ function MeetingModal({
                 overflow: 'auto',
               }}
             >
-              {meeting.granola_transcript}
+              {transcript}
             </div>
           </div>
         )}
@@ -239,8 +245,8 @@ function MeetingRow({
   const [noteText, setNoteText] = useState(meeting.note_content || '');
   const [expanded, setExpanded] = useState(false);
 
-  const refType = meeting.event_id ? 'calendar' : 'granola';
-  const refId = (meeting.event_id || meeting.granola_id)!;
+  const refType = meeting.event_id ? 'calendar' : 'external';
+  const refId = (meeting.event_id || meeting.notes_id || meeting.granola_id)!;
 
   const userEmail = profile?.user_email;
   const attendees = parseAttendees(meeting.attendees_json);
@@ -249,7 +255,9 @@ function MeetingRow({
     .map((a) => a.name || a.email?.split('@')[0] || '')
     .filter(Boolean);
 
-  const hasGranola = !!(meeting.granola_summary_html || meeting.granola_summary_plain);
+  const hasNotes = !!(meeting.notes_summary_html || meeting.granola_summary_html || meeting.notes_summary_plain || meeting.granola_summary_plain);
+  const notesBadgeLink = meeting.notes_link || meeting.granola_link;
+  const notesBadgeLabel = meeting.notes_provider ? meeting.notes_provider.charAt(0).toUpperCase() + meeting.notes_provider.slice(1) : 'Notes';
 
   const handleSave = () => {
     if (!noteText.trim()) return;
@@ -280,7 +288,7 @@ function MeetingRow({
       {/* Header: title left, time right */}
       <div className="meeting-row-header" onClick={handleHeaderClick}>
         <div className="meeting-row-title">
-          {hasGranola ? (
+          {hasNotes ? (
             <button
               className="btn-link meeting-title-link"
               onClick={(e) => { e.stopPropagation(); onOpenModal(meeting); }}
@@ -291,15 +299,15 @@ function MeetingRow({
           ) : (
             <span>{meeting.summary}</span>
           )}
-          {meeting.granola_link && (
+          {notesBadgeLink && (
             <a
-              href={meeting.granola_link}
+              href={notesBadgeLink}
               target="_blank"
               rel="noopener noreferrer"
               className="meeting-source-badge"
               onClick={(e) => e.stopPropagation()}
             >
-              Granola
+              {notesBadgeLabel}
             </a>
           )}
           {meeting.html_link && (
@@ -347,21 +355,26 @@ function MeetingRow({
             </div>
           )}
 
-          {/* Granola summary */}
-          {(meeting.granola_summary_html || meeting.granola_summary_plain) && (
-            <div className="meeting-summary">
-              {meeting.granola_summary_html ? (
-                <div
-                  className="markdown-content"
-                  dangerouslySetInnerHTML={{ __html: sanitizeHtml(meeting.granola_summary_html) }}
-                />
-              ) : (
-                <div style={{ whiteSpace: 'pre-wrap' }}>
-                  {meeting.granola_summary_plain}
-                </div>
-              )}
-            </div>
-          )}
+          {/* Meeting notes summary */}
+          {(() => {
+            const html = meeting.notes_summary_html || meeting.granola_summary_html;
+            const plain = meeting.notes_summary_plain || meeting.granola_summary_plain;
+            if (!html && !plain) return null;
+            return (
+              <div className="meeting-summary">
+                {html ? (
+                  <div
+                    className="markdown-content"
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }}
+                  />
+                ) : (
+                  <div style={{ whiteSpace: 'pre-wrap' }}>
+                    {plain}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Notes - always visible when expanded */}
           <div className="meeting-inline-notes">
@@ -419,7 +432,7 @@ function computeOverlapColumns(meetings: MeetingWithContext[]): Map<string, { co
   const blocks: Block[] = meetings.map(m => {
     const s = new Date(m.start_time).getTime();
     const e = m.end_time ? new Date(m.end_time).getTime() : s + 30 * 60000;
-    return { id: m.event_id || m.granola_id || m.start_time, start: s, end: e };
+    return { id: m.event_id || m.notes_id || m.granola_id || m.start_time, start: s, end: e };
   });
 
   // Find groups of overlapping meetings
@@ -487,7 +500,7 @@ function DayCalendarView({
     const endMinutes = (end.getHours() - startHour) * 60 + end.getMinutes();
     const top = (startMinutes / 60) * HOUR_HEIGHT;
     const height = Math.max(((endMinutes - startMinutes) / 60) * HOUR_HEIGHT, 24);
-    const id = m.event_id || m.granola_id || m.start_time;
+    const id = m.event_id || m.notes_id || m.granola_id || m.start_time;
     const overlap = overlapCols.get(id) || { col: 0, totalCols: 1 };
     return { meeting: m, top, height, overlap };
   });
@@ -671,7 +684,7 @@ function MeetingList({
           <div className="meeting-day-header">{dateLabel}</div>
           {dayMeetings.map((m, i) => (
             <MeetingRow
-              key={`${m.event_id || m.granola_id || i}`}
+              key={`${m.event_id || m.notes_id || m.granola_id || i}`}
               meeting={m}
               onOpenModal={setSelectedMeeting}
             />
@@ -698,8 +711,8 @@ function MeetingList({
   );
 }
 
-function GranolaMeetingList() {
-  const allQuery = useAllGranola();
+function MeetingNotesList() {
+  const allQuery = useAllMeetingNotes();
   const allMeetings = useMemo(() => allQuery.data?.pages.flatMap(p => p.items) ?? [], [allQuery.data]);
   const allTotal = allQuery.data?.pages[0]?.total ?? 0;
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -714,19 +727,23 @@ function GranolaMeetingList() {
 
   return (
     <>
-      {allQuery.isLoading && <p className="empty-state">Loading Granola meetings...</p>}
+      {allQuery.isLoading && <p className="empty-state">Loading meeting notes...</p>}
       {!allQuery.isLoading && allMeetings.length === 0 && (
-        <p className="empty-state">No synced Granola meetings yet. Run a sync to populate.</p>
+        <p className="empty-state">No synced meeting notes yet. Run a sync to populate.</p>
       )}
       {allTotal > 0 && (
         <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-sm)' }}>
-          {allTotal} Granola meeting{allTotal !== 1 ? 's' : ''}
+          {allTotal} meeting note{allTotal !== 1 ? 's' : ''}
         </p>
       )}
       <div>
         {allMeetings.map((meeting) => {
           const isExpanded = expandedIds.has(meeting.id);
-          const hasSummary = !!(meeting.panel_summary_html || meeting.panel_summary_plain);
+          const html = meeting.summary_html || meeting.panel_summary_html;
+          const plain = meeting.summary_plain || meeting.panel_summary_plain;
+          const link = meeting.external_link || meeting.granola_link;
+          const hasSummary = !!(html || plain);
+          const provider = meeting.provider ? meeting.provider.charAt(0).toUpperCase() + meeting.provider.slice(1) : '';
           return (
             <div key={meeting.id} className="dashboard-item-row" onClick={() => { if (hasSummary) toggleExpand(meeting.id); }} style={{ cursor: hasSummary ? 'pointer' : undefined }}>
               <div
@@ -735,11 +752,16 @@ function GranolaMeetingList() {
               >
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="dashboard-item-title">
-                    {meeting.granola_link ? (
-                      <a href={meeting.granola_link} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+                    {link ? (
+                      <a href={link} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
                         {meeting.title}
                       </a>
                     ) : meeting.title}
+                    {provider && (
+                      <span style={{ marginLeft: 'var(--space-xs)', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
+                        {provider}
+                      </span>
+                    )}
                   </div>
                   <div className="dashboard-item-meta">
                     {formatMeetingDate(meeting.created_at)}
@@ -748,13 +770,13 @@ function GranolaMeetingList() {
                   </div>
                   {isExpanded && hasSummary && (
                     <div className="dashboard-item-expanded">
-                      {meeting.panel_summary_html ? (
+                      {html ? (
                         <div
                           className="markdown-content"
-                          dangerouslySetInnerHTML={{ __html: sanitizeHtml(meeting.panel_summary_html) }}
+                          dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }}
                         />
                       ) : (
-                        <div style={{ whiteSpace: 'pre-wrap' }}>{meeting.panel_summary_plain}</div>
+                        <div style={{ whiteSpace: 'pre-wrap' }}>{plain}</div>
                       )}
                     </div>
                   )}
@@ -784,8 +806,9 @@ function GranolaMeetingList() {
 
 export function MeetingsPage() {
   const [searchParams] = useSearchParams();
-  const initialTab = searchParams.get('tab') === 'granola' ? 'granola' : 'upcoming';
-  const [tab, setTab] = useState<'upcoming' | 'past' | 'granola'>(initialTab);
+  const tabParam = searchParams.get('tab');
+  const initialTab = (tabParam === 'notes' || tabParam === 'granola') ? 'notes' : 'upcoming';
+  const [tab, setTab] = useState<'upcoming' | 'past' | 'notes'>(initialTab);
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
 
   // Keyboard handler for tab switching and view toggle
@@ -798,7 +821,7 @@ export function MeetingsPage() {
 
       if (e.key === 't' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
-        setTab(prev => prev === 'upcoming' ? 'past' : prev === 'past' ? 'granola' : 'upcoming');
+        setTab(prev => prev === 'upcoming' ? 'past' : prev === 'past' ? 'notes' : 'upcoming');
       }
       if (e.key === 'v' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
@@ -846,15 +869,15 @@ export function MeetingsPage() {
           Past
         </button>
         <button
-          className={`tab ${tab === 'granola' ? 'active' : ''}`}
-          onClick={() => setTab('granola')}
+          className={`tab ${tab === 'notes' ? 'active' : ''}`}
+          onClick={() => setTab('notes')}
         >
-          Granola
+          Notes
         </button>
       </div>
 
       {(tab === 'upcoming' || tab === 'past') && <MeetingList tab={tab} viewMode={viewMode} />}
-      {tab === 'granola' && <GranolaMeetingList />}
+      {tab === 'notes' && <MeetingNotesList />}
     </div>
   );
 }

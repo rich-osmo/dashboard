@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import {
   useLongformPosts,
   useLongformPost,
@@ -10,10 +10,13 @@ import {
   useCreateLongformComment,
   useDeleteLongformComment,
   useAIEditLongform,
+  usePeople,
 } from '../api/hooks';
 import type { LongformComment } from '../api/types';
 import { MarkdownRenderer } from '../components/shared/MarkdownRenderer';
 import { TimeAgo } from '../components/shared/TimeAgo';
+import { useFocusNavigation } from '../hooks/useFocusNavigation';
+import { KeyboardHints } from '../components/shared/KeyboardHints';
 
 // --- Post Detail / Editor ---
 
@@ -30,6 +33,7 @@ function PostDetail({
   const createComment = useCreateLongformComment();
   const deleteComment = useDeleteLongformComment();
   const { data: allTags } = useLongformTags();
+  const { data: allPeople } = usePeople();
   const navigate = useNavigate();
 
   const [editTitle, setEditTitle] = useState('');
@@ -39,6 +43,8 @@ function PostDetail({
   const [thoughtText, setThoughtText] = useState('');
   const [tagInput, setTagInput] = useState('');
   const [showTagDropdown, setShowTagDropdown] = useState(false);
+  const [personInput, setPersonInput] = useState('');
+  const [showPersonDropdown, setShowPersonDropdown] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState(false);
   const [showAIPanel, setShowAIPanel] = useState(false);
   const [aiHistory, setAIHistory] = useState<
@@ -115,6 +121,28 @@ function PostDetail({
     (tag: string) => {
       if (!post) return;
       updatePost.mutate({ id: post.id, tags: post.tags.filter((t) => t !== tag) });
+    },
+    [post, updatePost],
+  );
+
+  const handleAddPerson = useCallback(
+    (personId: string) => {
+      if (!post) return;
+      const currentIds = (post.people || []).map((p) => p.id);
+      if (!currentIds.includes(personId)) {
+        updatePost.mutate({ id: post.id, person_ids: [...currentIds, personId] });
+      }
+      setPersonInput('');
+      setShowPersonDropdown(false);
+    },
+    [post, updatePost],
+  );
+
+  const handleRemovePerson = useCallback(
+    (personId: string) => {
+      if (!post) return;
+      const newIds = (post.people || []).filter((p) => p.id !== personId).map((p) => p.id);
+      updatePost.mutate({ id: post.id, person_ids: newIds });
     },
     [post, updatePost],
   );
@@ -203,6 +231,12 @@ function PostDetail({
 
   const filteredTags = (allTags || []).filter(
     (t) => t.includes(tagInput.toLowerCase()) && !(post?.tags || []).includes(t),
+  );
+
+  const filteredPeople = (allPeople || []).filter(
+    (p) =>
+      p.name.toLowerCase().includes(personInput.toLowerCase()) &&
+      !(post?.people || []).some((pp) => pp.id === p.id),
   );
 
   if (isLoading) return <p>Loading...</p>;
@@ -302,6 +336,53 @@ function PostDetail({
                   }}
                 >
                   {t}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* People */}
+      <div className="longform-tags-row">
+        {(post.people || []).map((person) => (
+          <span key={person.id} className="longform-tag-badge">
+            <Link to={`/people/${person.id}`}>{person.name}</Link>
+            <button onClick={() => handleRemovePerson(person.id)}>&times;</button>
+          </span>
+        ))}
+        <div className="longform-tag-input-wrapper">
+          <input
+            className="longform-tag-input"
+            placeholder="Add person..."
+            value={personInput}
+            onChange={(e) => {
+              setPersonInput(e.target.value);
+              setShowPersonDropdown(true);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setShowPersonDropdown(false);
+            }}
+            onFocus={() => setShowPersonDropdown(true)}
+            onBlur={() => setTimeout(() => setShowPersonDropdown(false), 200)}
+          />
+          {showPersonDropdown && personInput && filteredPeople.length > 0 && (
+            <div className="longform-tag-dropdown">
+              {filteredPeople.slice(0, 8).map((p) => (
+                <div
+                  key={p.id}
+                  className="longform-tag-option"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    handleAddPerson(p.id);
+                  }}
+                >
+                  {p.name}
+                  {p.title && (
+                    <span style={{ color: 'var(--color-text-light)', marginLeft: '0.5em' }}>
+                      {p.title}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
@@ -509,6 +590,14 @@ export function LongformPage() {
   });
   const { data: allTags } = useLongformTags();
 
+  const { containerRef } = useFocusNavigation({
+    selector: '.longform-table-row',
+    enabled: !selectedPostId,
+    onOpen: (i) => {
+      if (posts?.[i]) handleSelectPost(posts[i].id);
+    },
+  });
+
   // Debounce search
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchText), 400);
@@ -615,6 +704,7 @@ export function LongformPage() {
       ) : !posts || posts.length === 0 ? (
         <p className="longform-empty">No posts yet. Click &ldquo;+ New Post&rdquo; to get started.</p>
       ) : (
+        <div ref={containerRef}>
         <table className="longform-table">
           <thead>
             <tr>
@@ -659,6 +749,10 @@ export function LongformPage() {
             ))}
           </tbody>
         </table>
+        </div>
+      )}
+      {posts && posts.length > 0 && (
+        <KeyboardHints hints={['j/k navigate', 'Enter open']} />
       )}
     </div>
   );

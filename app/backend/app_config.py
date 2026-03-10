@@ -146,6 +146,19 @@ def set_connector_enabled(connector_id: str, enabled: bool):
     save_config({"connectors": {connector_id: {"enabled": enabled}}})
 
 
+def get_google_access_mode() -> str:
+    """Return 'readonly' or 'readwrite' from connectors.google.access_mode."""
+    google = get_connector_config().get("google", {})
+    return google.get("access_mode", "readonly")
+
+
+def set_google_access_mode(mode: str):
+    """Set Google access mode ('readonly' or 'readwrite') in config."""
+    if mode not in ("readonly", "readwrite"):
+        raise ValueError(f"Invalid mode: {mode!r}")
+    save_config({"connectors": {"google": {"access_mode": mode}}})
+
+
 def get_prompt_context() -> str:
     """Build a context string for AI prompts from the user profile.
 

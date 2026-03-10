@@ -4,6 +4,7 @@ import {
   useProfile,
   useUpdateProfile,
   useConnectors,
+  useMeetingNotesProviders,
   useToggleConnector,
   useSecrets,
   useUpdateSecret,
@@ -14,7 +15,7 @@ import {
 } from '../api/hooks';
 import type { ConnectorInfo, UserProfile } from '../api/types';
 
-type Step = 'welcome' | 'profile' | 'connectors' | 'done';
+type Step = 'welcome' | 'profile' | 'meeting_notes' | 'connectors' | 'done';
 
 function WelcomeStep({ onNext }: { onNext: () => void }) {
   return (
@@ -125,6 +126,59 @@ function ProfileStep({ onNext, onSkip }: { onNext: () => void; onSkip: () => voi
           {updateProfile.isPending ? 'Saving...' : 'Continue'}
         </button>
         <button className="btn-secondary" onClick={onSkip}>Skip for now</button>
+      </div>
+    </div>
+  );
+}
+
+function MeetingNotesStep({ onNext, onSkip }: { onNext: () => void; onSkip: () => void }) {
+  const { data: providers } = useMeetingNotesProviders();
+  const updateProfile = useUpdateProfile();
+  const toggle = useToggleConnector();
+  const [selected, setSelected] = useState<string | null>(null);
+
+  const handleSelect = (providerId: string) => {
+    setSelected(providerId);
+    // Save the provider to profile and enable its connector
+    updateProfile.mutate(
+      { meeting_notes_provider: providerId },
+      {
+        onSuccess: () => {
+          toggle.mutate({ id: providerId, enabled: true }, { onSuccess: onNext });
+        },
+      }
+    );
+  };
+
+  return (
+    <div className="setup-step">
+      <h2>Meeting Notes</h2>
+      <p className="setup-hint">
+        Which app do you use for meeting notes? We&rsquo;ll sync your notes and
+        match them to calendar events automatically.
+      </p>
+      <div className="setup-connector-group" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 'var(--space-md)' }}>
+        {(providers ?? []).map((p) => (
+          <button
+            key={p.id}
+            className={`setup-connector-card ${selected === p.id ? 'enabled' : ''}`}
+            style={{ cursor: 'pointer', textAlign: 'left', border: selected === p.id ? '2px solid var(--color-primary)' : undefined }}
+            onClick={() => handleSelect(p.id)}
+            disabled={updateProfile.isPending || toggle.isPending}
+          >
+            <div className="setup-connector-header">
+              <div className="setup-connector-info">
+                <div className="setup-connector-name"><strong>{p.name}</strong></div>
+                <span className="setup-connector-desc">{p.description}</span>
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+      <div className="setup-actions">
+        <button className="btn-secondary" onClick={onSkip}>
+          I don&rsquo;t use one / Skip
+        </button>
       </div>
     </div>
   );
@@ -367,7 +421,7 @@ function DoneStep({ onFinish }: { onFinish: () => void }) {
   );
 }
 
-const STEPS: Step[] = ['welcome', 'profile', 'connectors', 'done'];
+const STEPS: Step[] = ['welcome', 'profile', 'meeting_notes', 'connectors', 'done'];
 
 export function SetupPage() {
   const navigate = useNavigate();
@@ -396,6 +450,7 @@ export function SetupPage() {
 
       {step === 'welcome' && <WelcomeStep onNext={next} />}
       {step === 'profile' && <ProfileStep onNext={next} onSkip={next} />}
+      {step === 'meeting_notes' && <MeetingNotesStep onNext={next} onSkip={next} />}
       {step === 'connectors' && <ConnectorsStep onNext={next} onSkip={next} />}
       {step === 'done' && <DoneStep onFinish={finish} />}
     </div>

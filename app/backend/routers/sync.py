@@ -177,6 +177,20 @@ def sync_notion():
         _update_sync_state("notion", "error", traceback.format_exc(), 0, elapsed=time.monotonic() - t0)
 
 
+def sync_notion_meetings():
+    """Sync meeting notes from Notion (if Notion is the meeting notes provider)."""
+    t0 = time.monotonic()
+    try:
+        from connectors.notion_meetings import sync_notion_meeting_notes
+
+        count = sync_notion_meeting_notes()
+        _update_sync_state("notion_meetings", "success", None, count, elapsed=time.monotonic() - t0)
+    except ImportError:
+        _update_sync_state("notion_meetings", "error", "Notion meetings connector not available", 0)
+    except Exception:
+        _update_sync_state("notion_meetings", "error", traceback.format_exc(), 0, elapsed=time.monotonic() - t0)
+
+
 def sync_github():
     t0 = time.monotonic()
     try:
@@ -354,6 +368,11 @@ def _run_full_sync():
             external.append(("slack", sync_slack))
         if _is_enabled("notion"):
             external.append(("notion", sync_notion))
+            # Also sync Notion meeting notes if Notion is the meeting notes provider
+            from app_config import get_profile
+
+            if get_profile().get("meeting_notes_provider") == "notion":
+                external.append(("notion_meetings", sync_notion_meetings))
         if _is_enabled("github"):
             external.append(("github", sync_github))
         if _is_enabled("ramp"):
@@ -386,10 +405,23 @@ def _run_full_sync():
         if _sync_cancel.is_set():
             return
 
+        # Group 5: Person linking — connect synced data to people via knowledge graph
+        from utils.person_linker import link_all
+
+        _tracked("person_linking", link_all)
+
         # Rebuild FTS indexes after all data is refreshed
         from database import rebuild_fts
 
         rebuild_fts()
+
+        if _sync_cancel.is_set():
+            return
+
+        # Group 6: Build compressed status context for Claude sessions
+        from routers.status_context import build_status_context
+
+        _tracked("status_context", build_status_context)
     finally:
         _sync_active_sources.clear()
         _sync_running = False
@@ -436,6 +468,7 @@ def trigger_source_sync(source: str, background_tasks: BackgroundTasks, org_only
         "drive": sync_drive,
         "sheets": sync_sheets,
         "docs": sync_docs,
+        "notion_meetings": sync_notion_meetings,
     }
     fn = sync_map.get(source)
     if not fn:

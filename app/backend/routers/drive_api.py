@@ -10,6 +10,7 @@ from googleapiclient.discovery import build
 from app_config import get_prompt_context, get_secret
 from connectors.google_auth import get_google_credentials
 from database import get_db_connection, get_write_db
+from models import GoogleDocAppend, GoogleDocCreate
 from routers._ranking_cache import compute_items_hash
 
 logger = logging.getLogger(__name__)
@@ -123,6 +124,72 @@ def get_doc_detail(doc_id: str):
         if not row:
             raise HTTPException(status_code=404, detail="Doc not found")
     return dict(row)
+
+
+# --- Docs write endpoints ---
+
+
+@router.post("/docs")
+def create_doc(doc: GoogleDocCreate):
+    """Create a new Google Doc."""
+    try:
+        creds = get_google_credentials()
+        docs_service = build("docs", "v1", credentials=creds)
+    except Exception as e:
+        logger.error("Google Docs not authenticated: %s", e)
+        raise HTTPException(status_code=503, detail="Google Docs not authenticated")
+
+    try:
+        result = docs_service.documents().create(body={"title": doc.title}).execute()
+        doc_id = result["documentId"]
+
+        if doc.body:
+            docs_service.documents().batchUpdate(
+                documentId=doc_id,
+                body={"requests": [{"insertText": {"location": {"index": 1}, "text": doc.body}}]},
+            ).execute()
+
+        if doc.folder_id:
+            drive_service = _get_service()
+            drive_service.files().update(
+                fileId=doc_id,
+                addParents=doc.folder_id,
+                fields="id, parents",
+            ).execute()
+    except Exception as e:
+        logger.error("Failed to create Google Doc: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to create Google Doc")
+
+    return {
+        "id": doc_id,
+        "title": doc.title,
+        "url": f"https://docs.google.com/document/d/{doc_id}/edit",
+    }
+
+
+@router.post("/docs/{doc_id}/append")
+def append_to_doc(doc_id: str, body: GoogleDocAppend):
+    """Append text to the end of a Google Doc."""
+    try:
+        creds = get_google_credentials()
+        docs_service = build("docs", "v1", credentials=creds)
+    except Exception as e:
+        logger.error("Google Docs not authenticated: %s", e)
+        raise HTTPException(status_code=503, detail="Google Docs not authenticated")
+
+    try:
+        doc = docs_service.documents().get(documentId=doc_id).execute()
+        end_index = doc["body"]["content"][-1]["endIndex"] - 1
+
+        docs_service.documents().batchUpdate(
+            documentId=doc_id,
+            body={"requests": [{"insertText": {"location": {"index": end_index}, "text": "\n" + body.text}}]},
+        ).execute()
+    except Exception as e:
+        logger.error("Failed to append to doc: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to append to document")
+
+    return {"ok": True, "doc_id": doc_id}
 
 
 # --- Live search endpoint ---

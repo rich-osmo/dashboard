@@ -31,6 +31,8 @@ class ProfileUpdate(BaseModel):
     github_repo: str | None = None
     skip_domains: list[str] | None = None
     news_topics: list[str] | None = None
+    meeting_notes_provider: str | None = None
+    notion_meeting_notes_database_id: str | None = None
 
 
 @router.get("")

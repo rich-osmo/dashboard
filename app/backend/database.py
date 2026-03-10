@@ -91,7 +91,9 @@ def batch_upsert(db: sqlite3.Connection, sql: str, rows: list, batch_size: int =
 
 def run_migrations():
     """Run Alembic migrations to upgrade database to latest version."""
-    backend_dir = Path(__file__).parent
+    from config import get_backend_root, is_bundled
+
+    backend_dir = get_backend_root()
     alembic_ini = backend_dir / "alembic.ini"
 
     if not alembic_ini.exists():
@@ -100,27 +102,36 @@ def run_migrations():
     # Ensure database directory exists
     DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-    # Find alembic executable in venv
-    import sys
+    if is_bundled():
+        # In PyInstaller bundle, use Alembic Python API (no CLI binary available)
+        from alembic.config import Config
 
-    alembic_path = Path(sys.executable).parent / "alembic"
-    if not alembic_path.exists():
-        # Fallback to system alembic
-        alembic_path = "alembic"
+        from alembic import command
 
-    # Run alembic upgrade head
-    result = subprocess.run(
-        [str(alembic_path), "-c", str(alembic_ini), "upgrade", "head"],
-        cwd=backend_dir,
-        capture_output=True,
-        text=True,
-    )
+        cfg = Config(str(alembic_ini))
+        cfg.set_main_option("script_location", str(backend_dir / "alembic"))
+        command.upgrade(cfg, "head")
+        print("Database migrations completed successfully")
+    else:
+        # Development mode: use alembic CLI
+        import sys
 
-    if result.returncode != 0:
-        print(f"Migration error: {result.stderr}")
-        raise RuntimeError(f"Database migration failed: {result.stderr}")
+        alembic_path = Path(sys.executable).parent / "alembic"
+        if not alembic_path.exists():
+            alembic_path = "alembic"
 
-    print("Database migrations completed successfully")
+        result = subprocess.run(
+            [str(alembic_path), "-c", str(alembic_ini), "upgrade", "head"],
+            cwd=backend_dir,
+            capture_output=True,
+            text=True,
+        )
+
+        if result.returncode != 0:
+            print(f"Migration error: {result.stderr}")
+            raise RuntimeError(f"Database migration failed: {result.stderr}")
+
+        print("Database migrations completed successfully")
 
 
 def init_db():
@@ -141,6 +152,7 @@ FTS_TABLES = [
     "fts_google_sheets",
     "fts_google_docs",
     "fts_longform",
+    "fts_meeting_notes_ext",
 ]
 
 

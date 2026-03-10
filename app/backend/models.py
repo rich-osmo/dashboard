@@ -141,6 +141,7 @@ class LongformCreate(BaseModel):
     body: str = ""
     status: str = "draft"
     tags: Optional[list[str]] = None
+    person_ids: Optional[list[str]] = None
 
 
 class LongformUpdate(BaseModel):
@@ -148,6 +149,7 @@ class LongformUpdate(BaseModel):
     body: Optional[str] = None
     status: Optional[str] = None
     tags: Optional[list[str]] = None
+    person_ids: Optional[list[str]] = None
 
 
 class LongformCommentCreate(BaseModel):
@@ -161,3 +163,130 @@ class LongformAIEditRequest(BaseModel):
     title: str = ""
     selected_text: str = ""
     history: list[dict] = []
+
+
+# --- Slack write models ---
+
+
+class SlackMessageEdit(BaseModel):
+    channel: str
+    ts: str
+    text: str
+
+
+class SlackMessageDelete(BaseModel):
+    channel: str
+    ts: str
+
+
+class SlackReaction(BaseModel):
+    channel: str
+    ts: str
+    name: str  # emoji name without colons
+
+
+# --- Notion write models ---
+
+
+class NotionPageCreate(BaseModel):
+    parent_id: str
+    parent_type: str = "database_id"  # "database_id" or "page_id"
+    title: str
+    properties: Optional[dict] = None
+
+
+class NotionPageUpdate(BaseModel):
+    properties: dict
+
+
+class NotionBlockAppend(BaseModel):
+    blocks: Optional[list[dict]] = None  # raw Notion block objects
+    text: Optional[str] = None  # convenience: auto-creates a paragraph block
+
+
+# --- Gmail write models ---
+
+
+class GmailSend(BaseModel):
+    to: str  # comma-separated emails
+    subject: str
+    body: str
+    cc: Optional[str] = None
+    bcc: Optional[str] = None
+    reply_to_message_id: Optional[str] = None
+    reply_to_thread_id: Optional[str] = None
+
+
+class GmailDraftCreate(BaseModel):
+    to: str
+    subject: str
+    body: str
+    cc: Optional[str] = None
+    bcc: Optional[str] = None
+
+
+class GmailDraftUpdate(BaseModel):
+    to: Optional[str] = None
+    subject: Optional[str] = None
+    body: Optional[str] = None
+    cc: Optional[str] = None
+    bcc: Optional[str] = None
+
+
+class GmailArchive(BaseModel):
+    message_ids: list[str]
+
+
+class GmailTrash(BaseModel):
+    message_ids: list[str]
+
+
+# --- Calendar write models ---
+
+
+class CalendarEventCreate(BaseModel):
+    summary: str
+    start_time: str  # ISO datetime
+    end_time: str
+    description: Optional[str] = None
+    location: Optional[str] = None
+    attendees: Optional[list[str]] = None  # email addresses
+    all_day: bool = False
+    send_notifications: bool = True
+
+
+class CalendarEventUpdate(BaseModel):
+    summary: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    description: Optional[str] = None
+    location: Optional[str] = None
+    attendees: Optional[list[str]] = None
+    send_notifications: bool = True
+
+
+class CalendarRSVP(BaseModel):
+    response: str  # "accepted", "declined", "tentative"
+
+
+# --- Docs/Sheets write models ---
+
+
+class GoogleDocCreate(BaseModel):
+    title: str
+    body: Optional[str] = None
+    folder_id: Optional[str] = None
+
+
+class GoogleDocAppend(BaseModel):
+    text: str
+
+
+class SheetsAppendRows(BaseModel):
+    range: str = "Sheet1"
+    values: list[list[str]]
+
+
+class SheetsCellUpdate(BaseModel):
+    range: str  # A1 notation
+    values: list[list[str]]

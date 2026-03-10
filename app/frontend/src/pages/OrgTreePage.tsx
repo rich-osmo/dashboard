@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { usePeople, useCreatePerson, useGroups } from '../api/hooks';
 import type { Person } from '../api/types';
+import { useFocusNavigation } from '../hooks/useFocusNavigation';
+import { KeyboardHints } from '../components/shared/KeyboardHints';
 
 function buildTree(employees: Person[]): (Person & { children: Person[] })[] {
   const map = new Map<string, Person & { children: Person[] }>();
@@ -62,6 +64,10 @@ export function OrgTreePage() {
   const [newTitle, setNewTitle] = useState('');
   const [newGroup, setNewGroup] = useState<string>('team');
   const [newReportsTo, setNewReportsTo] = useState('');
+
+  const { containerRef } = useFocusNavigation({
+    selector: '.org-tree-item',
+  });
 
   if (isLoading) return <p className="empty-state">Loading...</p>;
 
@@ -157,6 +163,7 @@ export function OrgTreePage() {
         </form>
       )}
 
+      <div ref={containerRef}>
       {groupList.map(group => {
         const members = employeesByGroup.get(group) || [];
         if (members.length === 0 && group !== 'team') return null;
@@ -176,6 +183,10 @@ export function OrgTreePage() {
           </div>
         );
       })}
+      </div>
+      {all.length > 0 && (
+        <KeyboardHints hints={['j/k navigate', 'Enter open']} />
+      )}
     </div>
   );
 }

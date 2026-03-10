@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   useAuthStatus,
   useGoogleAuth,
+  useGranolaAuth,
   useGoogleRevoke,
   useTestConnection,
   useSync,
@@ -10,7 +11,9 @@ import {
   useProfile,
   useUpdateProfile,
   useConnectors,
+  useMeetingNotesProviders,
   useToggleConnector,
+  useSetGoogleAccessMode,
   useSecrets,
   useUpdateSecret,
   useSetupStatus,
@@ -104,9 +107,11 @@ function ServiceCard({
   status: ServiceAuthStatus | undefined;
 }) {
   const googleAuth = useGoogleAuth();
+  const granolaAuth = useGranolaAuth();
   const googleRevoke = useGoogleRevoke();
   const testConnection = useTestConnection();
   const toggle = useToggleConnector();
+  const setAccessMode = useSetGoogleAccessMode();
   const secrets = useSecrets();
   const updateSecret = useUpdateSecret();
   const [showDetail, setShowDetail] = useState(false);
@@ -114,6 +119,7 @@ function ServiceCard({
   const [tokenInputs, setTokenInputs] = useState<Record<string, string>>({});
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  const [accessModeChanged, setAccessModeChanged] = useState(false);
 
   const syncEntries = Object.entries(status?.sync || {});
   const hasSyncSuccess = syncEntries.some(([, s]) => s.last_sync_status === 'success');
@@ -167,6 +173,35 @@ function ServiceCard({
         </div>
         {status && <StatusBadge status={status} />}
       </div>
+
+      {connector.enabled && connector.google_access_mode && (
+        <div style={{ margin: 'var(--space-sm) 0', fontSize: 'var(--text-sm)' }}>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
+            Access:
+            <select
+              value={connector.google_access_mode}
+              onChange={(e) => {
+                const mode = e.target.value as 'readonly' | 'readwrite';
+                setAccessMode.mutate(mode, {
+                  onSuccess: (data) => {
+                    if (data.needs_reauth) setAccessModeChanged(true);
+                  },
+                });
+              }}
+              disabled={setAccessMode.isPending}
+              style={{ fontSize: 'var(--text-sm)', padding: '2px 4px' }}
+            >
+              <option value="readonly">Read Only</option>
+              <option value="readwrite">Read &amp; Write</option>
+            </select>
+          </label>
+          {accessModeChanged && (
+            <div className="auth-error" style={{ marginTop: 'var(--space-xs)', padding: 'var(--space-xs) var(--space-sm)' }}>
+              Access mode changed — click Authenticate below to re-authorize with new permissions.
+            </div>
+          )}
+        </div>
+      )}
 
       {connector.enabled && (
         <>
@@ -243,13 +278,22 @@ function ServiceCard({
             {connector.category === 'oauth' && !status?.connected && (
               <button
                 className="auth-action-btn"
-                onClick={() => googleAuth.mutate()}
-                disabled={googleAuth.isPending}
+                onClick={() => connector.id === 'granola' ? granolaAuth.mutate() : googleAuth.mutate()}
+                disabled={connector.id === 'granola' ? granolaAuth.isPending : googleAuth.isPending}
               >
-                {googleAuth.isPending ? 'Authenticating...' : 'Authenticate'}
+                {(connector.id === 'granola' ? granolaAuth.isPending : googleAuth.isPending) ? 'Authenticating...' : 'Authenticate'}
               </button>
             )}
-            {connector.category === 'oauth' && status?.connected && (
+            {connector.category === 'oauth' && status?.connected && connector.id === 'granola' && (
+              <button
+                className="auth-action-btn"
+                onClick={() => granolaAuth.mutate()}
+                disabled={granolaAuth.isPending}
+              >
+                {granolaAuth.isPending ? 'Authenticating...' : 'Reauthenticate'}
+              </button>
+            )}
+            {connector.category === 'oauth' && status?.connected && connector.id !== 'granola' && (
               <button
                 className="auth-action-btn auth-action-btn-secondary"
                 onClick={() => googleRevoke.mutate()}
@@ -291,10 +335,10 @@ function ServiceCard({
             </ol>
           )}
 
-          {googleAuth.data?.error && (
+          {(googleAuth.data?.error || granolaAuth.data?.error) && (
             <div className="auth-error" style={{ marginTop: 'var(--space-md)' }}>
               <div className="auth-error-label">OAuth Error</div>
-              <div className="auth-error-message">{googleAuth.data.error}</div>
+              <div className="auth-error-message">{googleAuth.data?.error || granolaAuth.data?.error}</div>
             </div>
           )}
         </>
@@ -468,6 +512,56 @@ function DataSection({ setupStatus }: { setupStatus: { data_dir: string; databas
   );
 }
 
+function MeetingNotesSection() {
+  const { data: profile } = useProfile();
+  const updateProfile = useUpdateProfile();
+  const { data: providers } = useMeetingNotesProviders();
+  const toggle = useToggleConnector();
+
+  const currentProvider = profile?.meeting_notes_provider || null;
+
+  const handleSelect = (providerId: string | null) => {
+    updateProfile.mutate(
+      { meeting_notes_provider: providerId || '' },
+      {
+        onSuccess: () => {
+          if (providerId) {
+            toggle.mutate({ id: providerId, enabled: true });
+          }
+        },
+      }
+    );
+  };
+
+  if (!providers || providers.length === 0) return null;
+
+  return (
+    <div style={{ marginBottom: 'var(--space-lg)' }}>
+      <h2>Meeting Notes</h2>
+      <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>
+        Select which app you use for meeting notes. Notes will be synced and matched to your calendar events.
+      </p>
+      <div style={{ display: 'flex', gap: 'var(--space-sm)', flexWrap: 'wrap', marginTop: 'var(--space-sm)' }}>
+        {providers.map((p) => (
+          <button
+            key={p.id}
+            className={`filter-btn ${currentProvider === p.id ? 'active' : ''}`}
+            onClick={() => handleSelect(currentProvider === p.id ? null : p.id)}
+            disabled={updateProfile.isPending}
+          >
+            {p.name}
+          </button>
+        ))}
+      </div>
+      {currentProvider && (
+        <div style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)', marginTop: 'var(--space-xs)' }}>
+          Using <strong>{providers.find(p => p.id === currentProvider)?.name || currentProvider}</strong> as your meeting notes source.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SyncStatusSummary() {
   const { data: syncStatus } = useSyncStatus();
   const { data: connectors } = useConnectors();
@@ -550,6 +644,8 @@ export function SettingsPage() {
       <h1>Settings</h1>
 
       <ProfileSection />
+
+      <MeetingNotesSection />
 
       <h2>Connections</h2>
       <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>

@@ -3,7 +3,9 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).parent / ".env")
+from config import get_backend_root, is_bundled
+
+load_dotenv(get_backend_root() / ".env")
 
 # Fix macOS Python SSL certificate issue — point OpenSSL at certifi's CA bundle
 # so urllib, httpx, slack_sdk, etc. can all verify HTTPS certificates.
@@ -51,6 +53,7 @@ from routers import (
     search,
     sheets_api,
     slack_api,
+    status_context,
     sync,
     weather,
 )
@@ -115,6 +118,12 @@ app.include_router(profile.router)
 app.include_router(personas.router)
 app.include_router(briefing.router)
 app.include_router(weather.router)
+app.include_router(status_context.router)
+
+# GraphQL knowledge graph API
+from graphql_api import graphql_app
+
+app.include_router(graphql_app, prefix="/graphql")
 
 
 @app.get("/api/health")
@@ -140,6 +149,9 @@ def open_url(body: dict):
 @app.post("/api/restart")
 def restart():
     """Rebuild frontend dist, then restart the server process."""
+    if is_bundled():
+        return {"status": "not_supported", "message": "Restart not available in bundled app"}
+
     import os
     import signal
     import subprocess
@@ -167,7 +179,12 @@ def startup():
 
 
 # Serve built frontend — must be last so it doesn't shadow API routes
-DIST_DIR = Path(__file__).parent.parent / "frontend" / "dist"
+import sys
+
+if is_bundled():
+    DIST_DIR = Path(sys._MEIPASS) / "frontend" / "dist"
+else:
+    DIST_DIR = Path(__file__).parent.parent / "frontend" / "dist"
 if DIST_DIR.exists():
     app.mount("/assets", StaticFiles(directory=DIST_DIR / "assets"), name="assets")
 

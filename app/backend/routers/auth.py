@@ -7,7 +7,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from app_config import ALLOWED_SECRET_KEYS, delete_secret, get_secret, set_secret
-from config import GCLOUD_CREDENTIALS_PATH, GRANOLA_CACHE_PATH
+from config import GCLOUD_CREDENTIALS_PATH, get_google_scopes
 from database import get_write_db
 
 logger = logging.getLogger(__name__)
@@ -166,15 +166,22 @@ def _check_ramp() -> dict:
 
 
 def _check_granola() -> dict:
-    """Check if Granola cache file exists (no auth needed)."""
+    """Check Granola MCP auth status by inspecting stored tokens."""
+    from connectors.mcp_client import _has_any_tokens, _has_valid_tokens
+
     result = {"configured": False, "connected": False, "error": None, "detail": None}
 
-    if GRANOLA_CACHE_PATH.exists():
+    if _has_valid_tokens():
         result["configured"] = True
         result["connected"] = True
-        result["detail"] = f"Cache file found at {GRANOLA_CACHE_PATH}"
+        result["detail"] = "Authenticated via Granola MCP (mcp.granola.ai)"
+    elif _has_any_tokens():
+        # Tokens exist but access token is expired and no usable refresh token.
+        # The user needs to re-authenticate interactively.
+        result["configured"] = True
+        result["error"] = "Granola access token expired. Click 'Authenticate' to re-connect."
     else:
-        result["detail"] = f"Cache file not found at {GRANOLA_CACHE_PATH}"
+        result["detail"] = "Not authenticated. Enable and click 'Authenticate' to connect."
 
     return result
 
@@ -201,7 +208,7 @@ _AUTH_TO_SYNC = {
     "google": ["gmail", "calendar"],
     "google_drive": ["drive", "sheets", "docs"],
     "slack": ["slack"],
-    "notion": ["notion"],
+    "notion": ["notion", "notion_meetings"],
     "granola": ["granola"],
     "github": ["github"],
     "ramp": ["ramp", "ramp_vendors", "ramp_bills"],
@@ -211,7 +218,7 @@ _AUTH_TO_SYNC = {
 # Map secret keys to the sync_state sources they affect
 _SECRET_TO_SYNC = {
     "SLACK_TOKEN": ["slack"],
-    "NOTION_TOKEN": ["notion"],
+    "NOTION_TOKEN": ["notion", "notion_meetings"],
     "RAMP_CLIENT_ID": ["ramp", "ramp_vendors", "ramp_bills"],
     "RAMP_CLIENT_SECRET": ["ramp", "ramp_vendors", "ramp_bills"],
 }
@@ -221,7 +228,7 @@ _CONNECTOR_TO_SYNC = {
     "google": ["gmail", "calendar"],
     "google_drive": ["drive", "sheets", "docs"],
     "slack": ["slack"],
-    "notion": ["notion"],
+    "notion": ["notion", "notion_meetings"],
     "granola": ["granola"],
     "github": ["github"],
     "ramp": ["ramp", "ramp_vendors", "ramp_bills"],
@@ -269,6 +276,28 @@ def auth_status():
     return services
 
 
+@router.get("/google/scopes")
+def google_scopes():
+    """Check if the current Google token has the required scopes."""
+    required = get_google_scopes()
+    current: list[str] = []
+    needs_reauth = True
+
+    if TOKEN_PATH.exists():
+        try:
+            from google.oauth2.credentials import Credentials
+
+            creds = Credentials.from_authorized_user_file(str(TOKEN_PATH))
+            current = list(creds.scopes or [])
+            needs_reauth = not set(required).issubset(set(current))
+        except Exception:
+            pass
+    elif GCLOUD_CREDENTIALS_PATH.exists():
+        needs_reauth = True  # ADC doesn't store scopes — assume stale
+
+    return {"required": required, "current": current, "needs_reauth": needs_reauth}
+
+
 @router.post("/google")
 def google_auth():
     """Trigger browser-based Google OAuth flow."""
@@ -299,6 +328,20 @@ def google_revoke():
             pass
         return {"status": "revoked"}
     return {"status": "no_token"}
+
+
+@router.post("/granola/connect")
+def granola_connect():
+    """Initiate Granola OAuth flow (opens browser for user consent)."""
+    try:
+        from connectors.mcp_client import initiate_granola_oauth
+
+        initiate_granola_oauth()
+        _clear_sync_errors(_AUTH_TO_SYNC.get("granola", []))
+        return {"status": "authenticated"}
+    except Exception:
+        logger.exception("Granola OAuth flow failed")
+        return {"status": "error", "error": "Granola OAuth flow failed"}
 
 
 @router.post("/test/{service}")
@@ -377,29 +420,37 @@ def remove_secret(key: str):
 
 
 @router.get("/connectors")
-def list_connectors():
-    """Return all registered connectors with their metadata and enabled status."""
-    from app_config import get_connector_config
-    from connectors.registry import get_all
+def list_connectors(capability: str | None = None):
+    """Return all registered connectors with their metadata and enabled status.
+
+    Optionally filter by capability (e.g. ?capability=meeting_notes).
+    """
+    from app_config import get_connector_config, get_google_access_mode
+    from connectors.registry import get_all, get_by_capability
 
     config = get_connector_config()
+    google_mode = get_google_access_mode()
+    connectors = get_by_capability(capability) if capability else get_all()
     result = []
-    for c in get_all():
+    for c in connectors:
         entry = config.get(c.id, {})
         enabled = entry.get("enabled", c.default_enabled)
-        result.append(
-            {
-                "id": c.id,
-                "name": c.name,
-                "description": c.description,
-                "category": c.category,
-                "secret_keys": c.secret_keys,
-                "help_steps": c.help_steps,
-                "help_url": c.help_url,
-                "default_enabled": c.default_enabled,
-                "enabled": enabled,
-            }
-        )
+        item: dict = {
+            "id": c.id,
+            "name": c.name,
+            "description": c.description,
+            "category": c.category,
+            "secret_keys": c.secret_keys,
+            "help_steps": c.help_steps,
+            "help_url": c.help_url,
+            "default_enabled": c.default_enabled,
+            "enabled": enabled,
+            "capabilities": c.capabilities,
+        }
+        # Include access mode for Google connectors
+        if c.id in ("google", "google_drive"):
+            item["google_access_mode"] = google_mode
+        result.append(item)
     return result
 
 
@@ -427,3 +478,45 @@ def disable_connector(connector_id: str):
         return {"error": f"Unknown connector: {connector_id}"}
     set_connector_enabled(connector_id, False)
     return {"status": "ok", "connector": connector_id, "enabled": False}
+
+
+# --- Google access mode ---
+
+
+class AccessModeUpdate(BaseModel):
+    mode: str  # "readonly" or "readwrite"
+
+
+@router.get("/google/access-mode")
+def get_access_mode():
+    """Return the current Google access mode."""
+    from app_config import get_google_access_mode
+
+    return {"mode": get_google_access_mode()}
+
+
+@router.post("/google/access-mode")
+def set_access_mode(body: AccessModeUpdate):
+    """Set Google access mode and invalidate cached credentials."""
+    from app_config import get_google_access_mode, set_google_access_mode
+
+    old_mode = get_google_access_mode()
+    if body.mode not in ("readonly", "readwrite"):
+        return {"error": "mode must be 'readonly' or 'readwrite'"}
+
+    set_google_access_mode(body.mode)
+
+    # If mode changed, clear cached credentials so next call uses new scopes
+    if old_mode != body.mode:
+        try:
+            from connectors import google_auth
+
+            google_auth._cached_creds = None
+        except Exception:
+            pass
+        # Delete token — it was issued for the old scopes
+        if TOKEN_PATH.exists():
+            TOKEN_PATH.unlink(missing_ok=True)
+
+    needs_reauth = old_mode != body.mode
+    return {"status": "ok", "mode": body.mode, "needs_reauth": needs_reauth}

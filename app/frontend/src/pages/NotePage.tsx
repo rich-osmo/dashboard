@@ -16,6 +16,7 @@ import { detectEmployees } from '../utils/detectEmployees';
 import { parseIssuePrefix } from '../utils/parseIssuePrefix';
 import { useMentionAutocomplete } from '../hooks/useMentionAutocomplete';
 import { useFocusNavigation } from '../hooks/useFocusNavigation';
+import { KeyboardHints } from '../components/shared/KeyboardHints';
 
 function isThought(note: Note): boolean {
   return note.text.startsWith('[t]') || note.text.startsWith('[T]');
@@ -445,6 +446,9 @@ export function NotePage() {
         )}
         </div>
       </div>
+      {allItems.length > 0 && (
+        <KeyboardHints hints={['j/k navigate', 'Enter open', 'd toggle done', 'i create issue']} />
+      )}
     </div>
   );
 }

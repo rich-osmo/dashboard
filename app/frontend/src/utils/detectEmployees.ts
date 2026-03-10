@@ -9,18 +9,31 @@ export function detectEmployees(
   const seen = new Set<string>();
 
   // Find all explicit @mentions (global search)
-  const mentionRegex = /@(\w+)(?:\s+(\w+))?/g;
+  const mentionRegex = /@(\w+(?:\s+\w+)?)/g;
   let mentionMatch;
   while ((mentionMatch = mentionRegex.exec(text)) !== null) {
-    const firstName = mentionMatch[1].trim().toLowerCase();
-    const secondWord = mentionMatch[2]?.trim().toLowerCase();
-    const fullQuery = secondWord ? `${firstName} ${secondWord}` : null;
-    const found = employees.find((e) => {
+    const query = mentionMatch[1].trim().toLowerCase();
+    const parts = query.split(/\s+/);
+    const firstName = parts[0];
+    const hasLastName = parts.length > 1;
+
+    // Try full name match first, then fall back to first-name-only
+    let found = employees.find((e) => {
       if (seen.has(e.id)) return false;
       const name = e.name.toLowerCase();
-      if (fullQuery && (name === fullQuery || name.includes(fullQuery))) return true;
-      return name.split(' ')[0] === firstName;
+      if (hasLastName && (name === query || name.startsWith(query))) return true;
+      return false;
     });
+    if (!found) {
+      found = employees.find((e) => {
+        if (seen.has(e.id)) return false;
+        return e.name.toLowerCase().split(' ')[0] === firstName;
+      }) ?? null;
+      // If first-name match consumed a last name token, rewind the regex
+      if (found && hasLastName) {
+        mentionRegex.lastIndex = mentionMatch.index + 1 + firstName.length;
+      }
+    }
     if (found) {
       matched.push(found);
       seen.add(found.id);

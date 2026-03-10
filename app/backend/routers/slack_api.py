@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from app_config import get_prompt_context, get_secret
 from database import get_db_connection, get_write_db
+from models import SlackMessageEdit, SlackReaction
 from routers._ranking_cache import compute_items_hash
 
 logger = logging.getLogger(__name__)
@@ -196,6 +197,54 @@ def get_thread(channel_id: str, thread_ts: str):
         )
 
     return {"channel_id": channel_id, "thread_ts": thread_ts, "count": len(messages), "messages": messages}
+
+
+@router.patch("/message")
+def edit_message(msg: SlackMessageEdit):
+    """Edit an existing Slack message."""
+    client = _get_client()
+    try:
+        result = client.chat_update(channel=msg.channel, ts=msg.ts, text=msg.text)
+    except Exception as e:
+        logger.error("Failed to edit message: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to edit message")
+    return {"ok": result.get("ok"), "channel": result.get("channel"), "ts": result.get("ts")}
+
+
+@router.delete("/message")
+def delete_message(channel: str = Query(...), ts: str = Query(...)):
+    """Delete a Slack message."""
+    client = _get_client()
+    try:
+        result = client.chat_delete(channel=channel, ts=ts)
+    except Exception as e:
+        logger.error("Failed to delete message: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to delete message")
+    return {"ok": result.get("ok")}
+
+
+@router.post("/react")
+def add_reaction(reaction: SlackReaction):
+    """Add an emoji reaction to a message."""
+    client = _get_client()
+    try:
+        result = client.reactions_add(channel=reaction.channel, timestamp=reaction.ts, name=reaction.name)
+    except Exception as e:
+        logger.error("Failed to add reaction: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to add reaction")
+    return {"ok": result.get("ok")}
+
+
+@router.delete("/react")
+def remove_reaction(channel: str = Query(...), ts: str = Query(...), name: str = Query(...)):
+    """Remove an emoji reaction from a message."""
+    client = _get_client()
+    try:
+        result = client.reactions_remove(channel=channel, timestamp=ts, name=name)
+    except Exception as e:
+        logger.error("Failed to remove reaction: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to remove reaction")
+    return {"ok": result.get("ok")}
 
 
 @router.post("/send")

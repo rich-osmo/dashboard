@@ -223,10 +223,12 @@ def delete_person(person_id: str):
         db.execute("UPDATE notes SET person_id = NULL WHERE person_id = ?", (person_id,))
         db.execute("DELETE FROM note_people WHERE person_id = ?", (person_id,))
         db.execute("DELETE FROM issue_people WHERE person_id = ?", (person_id,))
+        db.execute("DELETE FROM longform_post_people WHERE person_id = ?", (person_id,))
         # Delete related records
         db.execute("DELETE FROM meeting_files WHERE person_id = ?", (person_id,))
         db.execute("DELETE FROM one_on_one_notes WHERE person_id = ?", (person_id,))
         db.execute("UPDATE granola_meetings SET person_id = NULL WHERE person_id = ?", (person_id,))
+        db.execute("UPDATE meeting_notes_external SET person_id = NULL WHERE person_id = ?", (person_id,))
         # Delete person links, attributes, connections
         db.execute("DELETE FROM person_links WHERE person_id = ?", (person_id,))
         db.execute("DELETE FROM person_attributes WHERE person_id = ?", (person_id,))
@@ -264,12 +266,14 @@ def get_person(person_id: str):
         ).fetchall()
         person["meeting_files"] = [dict(r) for r in meeting_rows]
 
-        # Granola meetings
-        granola_rows = db.execute(
-            "SELECT * FROM granola_meetings WHERE person_id = ? ORDER BY created_at DESC",
+        # External meeting notes (from any provider: Granola, Notion, etc.)
+        ext_notes_rows = db.execute(
+            "SELECT * FROM meeting_notes_external WHERE person_id = ? AND valid_meeting = 1 ORDER BY created_at DESC",
             (person_id,),
         ).fetchall()
-        person["granola_meetings"] = [dict(r) for r in granola_rows]
+        person["meeting_notes"] = [dict(r) for r in ext_notes_rows]
+        # Legacy alias
+        person["granola_meetings"] = [dict(r) for r in ext_notes_rows if r["provider"] == "granola"]
 
         # Linked notes via junction table
         note_rows = db.execute(
@@ -300,6 +304,17 @@ def get_person(person_id: str):
             iss["meetings"] = []
             linked_issues.append(iss)
         person["linked_issues"] = linked_issues
+
+        # Linked longform posts via junction table
+        longform_rows = db.execute(
+            "SELECT DISTINCT lp.id, lp.title, lp.status, lp.word_count, lp.updated_at "
+            "FROM longform_posts lp "
+            "JOIN longform_post_people lpp ON lp.id = lpp.post_id "
+            "WHERE lpp.person_id = ? "
+            "ORDER BY lp.updated_at DESC",
+            (person_id,),
+        ).fetchall()
+        person["linked_longform_posts"] = [dict(r) for r in longform_rows]
 
         # 1:1 notes
         oon_rows = db.execute(
@@ -375,15 +390,15 @@ def get_person(person_id: str):
             }
         )
     file_dates = {s["date"] for s in summaries}
-    for gm in person["granola_meetings"][:5]:
-        g_date = (gm.get("created_at") or "")[:10]
-        if g_date and g_date not in file_dates:
+    for mn in person["meeting_notes"][:5]:
+        m_date = (mn.get("created_at") or "")[:10]
+        if m_date and m_date not in file_dates:
             summaries.append(
                 {
-                    "date": g_date,
-                    "title": gm.get("title", ""),
-                    "summary": (gm.get("panel_summary_plain") or "")[:200],
-                    "source": "granola",
+                    "date": m_date,
+                    "title": mn.get("title", ""),
+                    "summary": (mn.get("summary_plain") or mn.get("panel_summary_plain") or "")[:200],
+                    "source": mn.get("provider", "external"),
                 }
             )
     summaries.sort(key=lambda s: s["date"] or "", reverse=True)

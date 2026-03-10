@@ -5,6 +5,7 @@ venv/
 # Build output
 dist/
 dist-ssr/
+build/
 
 # Environment & secrets
 .env
@@ -38,12 +39,7 @@ test-results/
 playwright-report/
 .ruff_cache/
 
-# User data (created at runtime)
-teams/
-executives/
-hidden/
-projects/
-dashboard.json
+plans/
 
 # Backend specifics
 app/backend/venv/

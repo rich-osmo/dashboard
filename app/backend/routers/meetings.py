@@ -1,4 +1,4 @@
-"""Meetings API — unified view of calendar events + Granola meetings with personal notes."""
+"""Meetings API — unified view of calendar events + external meeting notes."""
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -15,11 +15,22 @@ def _dismissed_meeting_ids(db) -> set[str]:
 
 
 def _row_to_meeting(row) -> dict:
-    """Convert a DB row to a meeting dict."""
+    """Convert a DB row to a meeting dict with both new and legacy field names."""
     d = dict(row)
-    # Rename transcript_text -> granola_transcript for API consistency
+    # Provider-agnostic fields
     if "transcript_text" in d:
-        d["granola_transcript"] = d.pop("transcript_text")
+        d["notes_transcript"] = d.pop("transcript_text")
+    # Legacy aliases for backward compat
+    if "notes_id" in d:
+        d["granola_id"] = d["notes_id"] if d.get("notes_provider") == "granola" else None
+    if "notes_summary_html" in d:
+        d["granola_summary_html"] = d["notes_summary_html"]
+    if "notes_summary_plain" in d:
+        d["granola_summary_plain"] = d["notes_summary_plain"]
+    if "notes_link" in d:
+        d["granola_link"] = d["notes_link"]
+    if "notes_transcript" in d:
+        d["granola_transcript"] = d["notes_transcript"]
     return d
 
 
@@ -36,14 +47,17 @@ def list_meetings(
                 SELECT
                     ce.id as event_id, ce.summary, ce.start_time, ce.end_time,
                     ce.all_day, ce.attendees_json, ce.html_link, ce.description,
-                    gm.id as granola_id, gm.panel_summary_html as granola_summary_html,
-                    gm.panel_summary_plain as granola_summary_plain,
-                    gm.granola_link, gm.transcript_text, gm.title as granola_title,
+                    mne.id as notes_id, mne.provider as notes_provider,
+                    mne.summary_html as notes_summary_html,
+                    mne.summary_plain as notes_summary_plain,
+                    mne.external_link as notes_link,
+                    mne.transcript_text,
+                    mne.title as notes_title,
                     mn.id as note_id, mn.content as note_content,
                     'calendar' as source_type
                 FROM calendar_events ce
-                LEFT JOIN granola_meetings gm
-                    ON gm.calendar_event_id = ce.id AND gm.valid_meeting = 1
+                LEFT JOIN meeting_notes_external mne
+                    ON mne.calendar_event_id = ce.id AND mne.valid_meeting = 1
                 LEFT JOIN meeting_notes mn
                     ON mn.calendar_event_id = ce.id
                 WHERE ce.start_time > datetime('now')
@@ -65,45 +79,51 @@ def list_meetings(
             rows = db.execute(
                 """
                 SELECT * FROM (
-                    -- Calendar events with optional Granola enrichment
+                    -- Calendar events with optional external notes enrichment
                     SELECT
                         ce.id as event_id, ce.summary, ce.start_time, ce.end_time,
                         ce.all_day, ce.attendees_json, ce.html_link, ce.description,
-                        gm.id as granola_id, gm.panel_summary_html as granola_summary_html,
-                        gm.panel_summary_plain as granola_summary_plain,
-                        gm.granola_link, gm.transcript_text, gm.title as granola_title,
+                        mne.id as notes_id, mne.provider as notes_provider,
+                        mne.summary_html as notes_summary_html,
+                        mne.summary_plain as notes_summary_plain,
+                        mne.external_link as notes_link,
+                        mne.transcript_text,
+                        mne.title as notes_title,
                         COALESCE(mn.id, mn2.id) as note_id,
                         COALESCE(mn.content, mn2.content) as note_content,
                         'calendar' as source_type
                     FROM calendar_events ce
-                    LEFT JOIN granola_meetings gm
-                        ON gm.calendar_event_id = ce.id AND gm.valid_meeting = 1
+                    LEFT JOIN meeting_notes_external mne
+                        ON mne.calendar_event_id = ce.id AND mne.valid_meeting = 1
                     LEFT JOIN meeting_notes mn ON mn.calendar_event_id = ce.id
-                    LEFT JOIN meeting_notes mn2 ON mn2.granola_meeting_id = gm.id
+                    LEFT JOIN meeting_notes mn2 ON mn2.external_note_id = mne.id
                     WHERE ce.start_time <= datetime('now')
                       AND COALESCE(ce.status, 'confirmed') != 'cancelled'
                       AND COALESCE(ce.self_response, '') != 'declined'
 
                     UNION ALL
 
-                    -- Granola-only meetings (no matching calendar event)
+                    -- External notes without matching calendar event
                     SELECT
-                        NULL as event_id, gm.title as summary,
-                        gm.created_at as start_time, NULL as end_time,
-                        0 as all_day, gm.attendees_json, NULL as html_link,
+                        NULL as event_id, mne.title as summary,
+                        mne.created_at as start_time, NULL as end_time,
+                        0 as all_day, mne.attendees_json, NULL as html_link,
                         NULL as description,
-                        gm.id as granola_id, gm.panel_summary_html as granola_summary_html,
-                        gm.panel_summary_plain as granola_summary_plain,
-                        gm.granola_link, gm.transcript_text, gm.title as granola_title,
+                        mne.id as notes_id, mne.provider as notes_provider,
+                        mne.summary_html as notes_summary_html,
+                        mne.summary_plain as notes_summary_plain,
+                        mne.external_link as notes_link,
+                        mne.transcript_text,
+                        mne.title as notes_title,
                         mn.id as note_id, mn.content as note_content,
-                        'granola' as source_type
-                    FROM granola_meetings gm
-                    LEFT JOIN meeting_notes mn ON mn.granola_meeting_id = gm.id
-                    WHERE gm.valid_meeting = 1
-                      AND gm.created_at <= datetime('now')
-                      AND (gm.calendar_event_id IS NULL
-                           OR gm.calendar_event_id = ''
-                           OR gm.calendar_event_id NOT IN (SELECT id FROM calendar_events))
+                        'external' as source_type
+                    FROM meeting_notes_external mne
+                    LEFT JOIN meeting_notes mn ON mn.external_note_id = mne.id
+                    WHERE mne.valid_meeting = 1
+                      AND mne.created_at <= datetime('now')
+                      AND (mne.calendar_event_id IS NULL
+                           OR mne.calendar_event_id = ''
+                           OR mne.calendar_event_id NOT IN (SELECT id FROM calendar_events))
                 )
                 ORDER BY start_time DESC
                 LIMIT ? OFFSET ?
@@ -116,23 +136,22 @@ def list_meetings(
                 " AND COALESCE(status, 'confirmed') != 'cancelled'"
                 " AND COALESCE(self_response, '') != 'declined'"
             ).fetchone()["c"]
-            total_granola = db.execute(
-                """SELECT COUNT(*) as c FROM granola_meetings
+            total_ext = db.execute(
+                """SELECT COUNT(*) as c FROM meeting_notes_external
                    WHERE valid_meeting = 1
                      AND created_at <= datetime('now')
                      AND (calendar_event_id IS NULL
                           OR calendar_event_id = ''
                           OR calendar_event_id NOT IN (SELECT id FROM calendar_events))"""
             ).fetchone()["c"]
-            total = total_cal + total_granola
+            total = total_cal + total_ext
 
         # Filter out dismissed meetings
         dismissed = _dismissed_meeting_ids(db)
 
     meetings = []
     for r in rows:
-        # A meeting is identified by its event_id (calendar) or granola_id (Granola)
-        meeting_id = r["event_id"] or r["granola_id"]
+        meeting_id = r["event_id"] or r["notes_id"]
         if meeting_id and meeting_id not in dismissed:
             meetings.append(_row_to_meeting(r))
 
@@ -145,24 +164,43 @@ def list_meetings(
     }
 
 
-@router.get("/granola/all")
-def get_all_granola(
+@router.get("/notes/all")
+def get_all_meeting_notes(
     offset: int = Query(0, ge=0),
     limit: int = Query(30, ge=1, le=100),
+    provider: str | None = None,
 ):
-    """Return all synced Granola meetings, newest first, with pagination."""
+    """Return all external meeting notes, newest first, with optional provider filter."""
     with get_db_connection(readonly=True) as db:
-        rows = db.execute(
-            """SELECT id, title, created_at, updated_at, attendees_json,
-                      panel_summary_html, panel_summary_plain,
-                      granola_link, transcript_text, person_id
-               FROM granola_meetings
-               WHERE valid_meeting = 1
-               ORDER BY created_at DESC
-               LIMIT ? OFFSET ?""",
-            (limit, offset),
-        ).fetchall()
-        total = db.execute("SELECT COUNT(*) as c FROM granola_meetings WHERE valid_meeting = 1").fetchone()["c"]
+        if provider:
+            rows = db.execute(
+                """SELECT id, provider, title, created_at, updated_at, attendees_json,
+                          summary_html, summary_plain, external_link,
+                          transcript_text, person_id
+                   FROM meeting_notes_external
+                   WHERE valid_meeting = 1 AND provider = ?
+                   ORDER BY created_at DESC
+                   LIMIT ? OFFSET ?""",
+                (provider, limit, offset),
+            ).fetchall()
+            total = db.execute(
+                "SELECT COUNT(*) as c FROM meeting_notes_external WHERE valid_meeting = 1 AND provider = ?",
+                (provider,),
+            ).fetchone()["c"]
+        else:
+            rows = db.execute(
+                """SELECT id, provider, title, created_at, updated_at, attendees_json,
+                          summary_html, summary_plain, external_link,
+                          transcript_text, person_id
+                   FROM meeting_notes_external
+                   WHERE valid_meeting = 1
+                   ORDER BY created_at DESC
+                   LIMIT ? OFFSET ?""",
+                (limit, offset),
+            ).fetchall()
+            total = db.execute("SELECT COUNT(*) as c FROM meeting_notes_external WHERE valid_meeting = 1").fetchone()[
+                "c"
+            ]
     return {
         "items": [_row_to_meeting(r) for r in rows],
         "total": total,
@@ -172,40 +210,66 @@ def get_all_granola(
     }
 
 
+# Keep legacy endpoint as alias
+@router.get("/granola/all")
+def get_all_granola(
+    offset: int = Query(0, ge=0),
+    limit: int = Query(30, ge=1, le=100),
+):
+    """Legacy endpoint — returns Granola notes from meeting_notes_external."""
+    return get_all_meeting_notes(offset=offset, limit=limit, provider="granola")
+
+
 @router.post("/{ref_type}/{ref_id}/notes")
 def upsert_meeting_note(
     ref_type: str,
     ref_id: str,
     body: MeetingNoteUpsert,
 ):
-    if ref_type not in ("calendar", "granola"):
-        raise HTTPException(400, "ref_type must be 'calendar' or 'granola'")
+    if ref_type not in ("calendar", "granola", "external"):
+        raise HTTPException(400, "ref_type must be 'calendar', 'granola', or 'external'")
 
     with get_write_db() as db:
-        # Determine both IDs for cross-linking
+        # Determine IDs for cross-linking
         calendar_event_id = None
         granola_meeting_id = None
+        external_note_id = None
 
         if ref_type == "calendar":
             calendar_event_id = ref_id
-            # Check if there's a linked Granola meeting
+            # Check if there's a linked external note
+            mne = db.execute(
+                "SELECT id FROM meeting_notes_external WHERE calendar_event_id = ? AND valid_meeting = 1",
+                (ref_id,),
+            ).fetchone()
+            if mne:
+                external_note_id = mne["id"]
+            # Legacy: check granola_meetings too
             gm = db.execute(
                 "SELECT id FROM granola_meetings WHERE calendar_event_id = ? AND valid_meeting = 1",
                 (ref_id,),
             ).fetchone()
             if gm:
                 granola_meeting_id = gm["id"]
-        else:
+        elif ref_type == "granola":
             granola_meeting_id = ref_id
-            # Check if the Granola meeting has a calendar event
+            external_note_id = ref_id  # Same ID in meeting_notes_external
             gm = db.execute(
                 "SELECT calendar_event_id FROM granola_meetings WHERE id = ?",
                 (ref_id,),
             ).fetchone()
             if gm and gm["calendar_event_id"]:
                 calendar_event_id = gm["calendar_event_id"]
+        else:  # external
+            external_note_id = ref_id
+            mne = db.execute(
+                "SELECT calendar_event_id FROM meeting_notes_external WHERE id = ?",
+                (ref_id,),
+            ).fetchone()
+            if mne and mne["calendar_event_id"]:
+                calendar_event_id = mne["calendar_event_id"]
 
-        # Try to find existing note by either ID
+        # Try to find existing note by any ID
         existing = None
         if calendar_event_id:
             existing = db.execute(
@@ -217,21 +281,26 @@ def upsert_meeting_note(
                 "SELECT id FROM meeting_notes WHERE granola_meeting_id = ?",
                 (granola_meeting_id,),
             ).fetchone()
+        if not existing and external_note_id:
+            existing = db.execute(
+                "SELECT id FROM meeting_notes WHERE external_note_id = ?",
+                (external_note_id,),
+            ).fetchone()
 
         if existing:
             db.execute(
                 """UPDATE meeting_notes
                    SET content = ?, calendar_event_id = ?, granola_meeting_id = ?,
-                       updated_at = datetime('now')
+                       external_note_id = ?, updated_at = datetime('now')
                    WHERE id = ?""",
-                (body.content, calendar_event_id, granola_meeting_id, existing["id"]),
+                (body.content, calendar_event_id, granola_meeting_id, external_note_id, existing["id"]),
             )
             note_id = existing["id"]
         else:
             cur = db.execute(
-                """INSERT INTO meeting_notes (calendar_event_id, granola_meeting_id, content)
-                   VALUES (?, ?, ?)""",
-                (calendar_event_id, granola_meeting_id, body.content),
+                """INSERT INTO meeting_notes (calendar_event_id, granola_meeting_id, external_note_id, content)
+                   VALUES (?, ?, ?, ?)""",
+                (calendar_event_id, granola_meeting_id, external_note_id, body.content),
             )
             note_id = cur.lastrowid
 
@@ -243,13 +312,15 @@ def upsert_meeting_note(
 
 @router.delete("/{ref_type}/{ref_id}/notes")
 def delete_meeting_note(ref_type: str, ref_id: str):
-    if ref_type not in ("calendar", "granola"):
-        raise HTTPException(400, "ref_type must be 'calendar' or 'granola'")
+    if ref_type not in ("calendar", "granola", "external"):
+        raise HTTPException(400, "ref_type must be 'calendar', 'granola', or 'external'")
 
-    VALID_COLS = {"calendar_event_id": "calendar", "granola_meeting_id": "granola"}
-    col = "calendar_event_id" if ref_type == "calendar" else "granola_meeting_id"
-    if col not in VALID_COLS:
-        raise HTTPException(400, "Invalid ref_type")
+    col_map = {
+        "calendar": "calendar_event_id",
+        "granola": "granola_meeting_id",
+        "external": "external_note_id",
+    }
+    col = col_map[ref_type]
 
     with get_write_db() as db:
         result = db.execute(f"DELETE FROM meeting_notes WHERE {col} = ?", (ref_id,))

@@ -20,6 +20,8 @@ class ConnectorInfo:
     sync_fn: str | None = None
     # Dotted path to auth check function
     check_fn: str | None = None
+    # Capabilities this connector provides, e.g. ["meeting_notes", "pages"]
+    capabilities: list[str] = field(default_factory=list)
 
 
 REGISTRY: dict[str, ConnectorInfo] = {}
@@ -63,6 +65,11 @@ def is_enabled(connector_id: str) -> bool:
 
 def get_by_id(connector_id: str) -> ConnectorInfo | None:
     return REGISTRY.get(connector_id)
+
+
+def get_by_capability(capability: str) -> list[ConnectorInfo]:
+    """Return connectors that declare a given capability."""
+    return [c for c in REGISTRY.values() if capability in c.capabilities]
 
 
 def resolve_sync_fn(dotted_path: str):

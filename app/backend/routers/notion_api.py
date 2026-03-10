@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app_config import get_prompt_context, get_secret
 from database import get_db_connection, get_write_db
+from models import NotionBlockAppend, NotionPageCreate, NotionPageUpdate
 from routers._ranking_cache import compute_items_hash
 from utils.notion_blocks import blocks_to_text
 
@@ -220,6 +221,110 @@ def get_page_content(page_id: str):
         "block_count": len(all_blocks),
         "content": text,
     }
+
+
+# --- Write endpoints ---
+
+
+@router.post("/pages")
+def create_page(page: NotionPageCreate):
+    """Create a new Notion page."""
+    import httpx
+
+    headers = _get_headers()
+    body: dict = {
+        "parent": {page.parent_type: page.parent_id},
+        "properties": {
+            "title": {"title": [{"text": {"content": page.title}}]},
+            **(page.properties or {}),
+        },
+    }
+
+    try:
+        with httpx.Client() as client:
+            resp = client.post(f"{NOTION_API_BASE}/pages", headers=headers, json=body)
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        logger.error("Failed to create Notion page: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to create Notion page")
+
+    return {"id": data["id"], "url": data.get("url", ""), "title": page.title}
+
+
+@router.patch("/pages/{page_id}/properties")
+def update_page_properties(page_id: str, update: NotionPageUpdate):
+    """Update properties on a Notion page."""
+    import httpx
+
+    headers = _get_headers()
+    try:
+        with httpx.Client() as client:
+            resp = client.patch(
+                f"{NOTION_API_BASE}/pages/{page_id}",
+                headers=headers,
+                json={"properties": update.properties},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        logger.error("Failed to update Notion page: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to update Notion page")
+    return {"id": data["id"], "url": data.get("url", "")}
+
+
+@router.post("/pages/{page_id}/blocks")
+def append_blocks(page_id: str, body: NotionBlockAppend):
+    """Append content blocks to a Notion page."""
+    import httpx
+
+    headers = _get_headers()
+
+    blocks = body.blocks or []
+    if body.text and not blocks:
+        blocks = [
+            {
+                "object": "block",
+                "type": "paragraph",
+                "paragraph": {"rich_text": [{"type": "text", "text": {"content": body.text}}]},
+            }
+        ]
+
+    if not blocks:
+        raise HTTPException(status_code=400, detail="Provide either 'blocks' or 'text'")
+
+    try:
+        with httpx.Client() as client:
+            resp = client.patch(
+                f"{NOTION_API_BASE}/blocks/{page_id}/children",
+                headers=headers,
+                json={"children": blocks},
+            )
+            resp.raise_for_status()
+    except Exception as e:
+        logger.error("Failed to append blocks: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to append blocks")
+    return {"page_id": page_id, "blocks_added": len(blocks)}
+
+
+@router.delete("/pages/{page_id}")
+def archive_page(page_id: str):
+    """Archive (soft-delete) a Notion page."""
+    import httpx
+
+    headers = _get_headers()
+    try:
+        with httpx.Client() as client:
+            resp = client.patch(
+                f"{NOTION_API_BASE}/pages/{page_id}",
+                headers=headers,
+                json={"archived": True},
+            )
+            resp.raise_for_status()
+    except Exception as e:
+        logger.error("Failed to archive Notion page: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to archive page")
+    return {"ok": True, "page_id": page_id, "archived": True}
 
 
 # --- Gemini-ranked Notion pages ---

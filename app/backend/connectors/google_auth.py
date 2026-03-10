@@ -1,17 +1,30 @@
 """Shared Google API authentication."""
 
 import json
+import logging
 import os
 import stat
 from pathlib import Path
 
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 
-from config import GCLOUD_CREDENTIALS_PATH, GOOGLE_SCOPES
+from config import GCLOUD_CREDENTIALS_PATH, get_google_scopes
+
+logger = logging.getLogger(__name__)
 
 TOKEN_PATH = Path(__file__).parent.parent / ".google_token.json"
 _cached_creds: Credentials | None = None
+
+
+def _scopes_sufficient(creds: Credentials) -> bool:
+    """Check if the credential's granted scopes cover all required scopes."""
+    if not creds.scopes:
+        return True  # Can't verify from token — assume OK
+    required = set(get_google_scopes())
+    granted = set(creds.scopes)
+    return required.issubset(granted)
 
 
 def _get_quota_project_id() -> str | None:
@@ -27,18 +40,30 @@ def get_google_credentials() -> Credentials:
     if _cached_creds and _cached_creds.valid:
         return _cached_creds
 
+    scopes = get_google_scopes()
     quota_project_id = _get_quota_project_id()
 
     # Try app-specific token first
     if TOKEN_PATH.exists():
-        _cached_creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), GOOGLE_SCOPES)
+        _cached_creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), scopes)
         if quota_project_id:
             _cached_creds = _cached_creds.with_quota_project(quota_project_id)
+        if not _scopes_sufficient(_cached_creds):
+            _cached_creds = None
+            TOKEN_PATH.unlink(missing_ok=True)
+            raise RuntimeError("Google OAuth scopes have changed. Please re-authenticate at /api/auth/google")
         if _cached_creds.expired and _cached_creds.refresh_token:
-            _cached_creds.refresh(Request())
-            TOKEN_PATH.write_text(_cached_creds.to_json())
-            os.chmod(TOKEN_PATH, stat.S_IRUSR | stat.S_IWUSR)
-        if _cached_creds.valid:
+            try:
+                _cached_creds.refresh(Request())
+            except RefreshError as e:
+                logger.warning("Token refresh failed (likely scope change): %s", e)
+                _cached_creds = None
+                TOKEN_PATH.unlink(missing_ok=True)
+                # Fall through to ADC
+            else:
+                TOKEN_PATH.write_text(_cached_creds.to_json())
+                os.chmod(TOKEN_PATH, stat.S_IRUSR | stat.S_IWUSR)
+        if _cached_creds and _cached_creds.valid:
             return _cached_creds
 
     # Fall back to ADC
@@ -55,7 +80,7 @@ def get_google_credentials() -> Credentials:
             client_id=cred_data.get("client_id"),
             client_secret=cred_data.get("client_secret"),
             token_uri="https://oauth2.googleapis.com/token",
-            scopes=GOOGLE_SCOPES,
+            scopes=scopes,
             quota_project_id=cred_data.get("quota_project_id"),
         )
         _cached_creds.refresh(Request())
@@ -63,13 +88,16 @@ def get_google_credentials() -> Credentials:
         TOKEN_PATH.write_text(_cached_creds.to_json())
         os.chmod(TOKEN_PATH, stat.S_IRUSR | stat.S_IWUSR)
         return _cached_creds
-    except Exception:
+    except RefreshError:
+        scope_str = ",".join(scopes)
         raise RuntimeError(
-            "ADC token refresh failed. Run: gcloud auth application-default login "
-            "--scopes='https://www.googleapis.com/auth/gmail.readonly,"
-            "https://www.googleapis.com/auth/calendar.readonly,"
-            "https://www.googleapis.com/auth/drive.readonly,"
-            "https://www.googleapis.com/auth/spreadsheets.readonly'"
+            f"Google scopes changed — re-authenticate. Run:\n"
+            f"  gcloud auth application-default login --scopes='{scope_str}'"
+        )
+    except Exception:
+        scope_str = ",".join(scopes)
+        raise RuntimeError(
+            f"ADC token refresh failed. Run:\n  gcloud auth application-default login --scopes='{scope_str}'"
         )
 
 
@@ -83,6 +111,7 @@ def run_oauth_flow() -> Credentials:
     with open(GCLOUD_CREDENTIALS_PATH) as f:
         cred_data = json.load(f)
 
+    scopes = get_google_scopes()
     client_config = {
         "installed": {
             "client_id": cred_data["client_id"],
@@ -93,7 +122,7 @@ def run_oauth_flow() -> Credentials:
         }
     }
 
-    flow = InstalledAppFlow.from_client_config(client_config, GOOGLE_SCOPES)
+    flow = InstalledAppFlow.from_client_config(client_config, scopes)
     creds = flow.run_local_server(port=8080, open_browser=True)
 
     global _cached_creds

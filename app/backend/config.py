@@ -1,7 +1,21 @@
 import os
+import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+
+def is_bundled() -> bool:
+    """Return True when running inside a PyInstaller bundle."""
+    return getattr(sys, "_MEIPASS", None) is not None
+
+
+def get_backend_root() -> Path:
+    """Base path for finding backend files (alembic, .env, etc.)."""
+    if is_bundled():
+        return Path(sys._MEIPASS)
+    return Path(__file__).resolve().parent
+
+
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent if not is_bundled() else get_backend_root()
 
 
 def _data_dir() -> Path:
@@ -25,19 +39,45 @@ def _resolve_db_path() -> Path:
 
 DATABASE_PATH = _resolve_db_path()
 
-TEAMS_DIR = REPO_ROOT / "teams"
-HIDDEN_TEAMS_DIR = REPO_ROOT / "hidden" / "teams"
-EXECUTIVES_DIR = REPO_ROOT / "executives"
+# Legacy team directories — only exist in source-tree mode, not bundled
+TEAMS_DIR = REPO_ROOT / "teams" if not is_bundled() else Path("/nonexistent")
+HIDDEN_TEAMS_DIR = REPO_ROOT / "hidden" / "teams" if not is_bundled() else Path("/nonexistent")
+EXECUTIVES_DIR = REPO_ROOT / "executives" if not is_bundled() else Path("/nonexistent")
 
-GRANOLA_CACHE_PATH = Path.home() / "Library" / "Application Support" / "Granola" / "cache-v3.json"
+_GRANOLA_V4 = Path.home() / "Library" / "Application Support" / "Granola" / "cache-v4.json"
+_GRANOLA_V3 = Path.home() / "Library" / "Application Support" / "Granola" / "cache-v3.json"
+GRANOLA_CACHE_PATH = _GRANOLA_V4 if _GRANOLA_V4.exists() else _GRANOLA_V3
+
 GCLOUD_CREDENTIALS_PATH = Path.home() / ".config" / "gcloud" / "application_default_credentials.json"
 
-GOOGLE_SCOPES = [
+GOOGLE_SCOPES_READONLY = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/drive.readonly",
     "https://www.googleapis.com/auth/spreadsheets.readonly",
 ]
+
+GOOGLE_SCOPES_READWRITE = [
+    "https://www.googleapis.com/auth/gmail.modify",
+    "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/documents",
+]
+
+
+def get_google_scopes() -> list[str]:
+    """Return the appropriate Google scopes based on config access_mode."""
+    from app_config import get_google_access_mode
+
+    if get_google_access_mode() == "readwrite":
+        return GOOGLE_SCOPES_READWRITE
+    return GOOGLE_SCOPES_READONLY
+
+
+# Legacy alias — code that imports GOOGLE_SCOPES gets readonly by default.
+# New code should call get_google_scopes() instead.
+GOOGLE_SCOPES = GOOGLE_SCOPES_READONLY
 
 GMAIL_MAX_RESULTS = 50
 CALENDAR_DAYS_AHEAD = 14

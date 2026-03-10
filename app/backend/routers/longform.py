@@ -43,6 +43,24 @@ def _set_post_tags(db, post_id: int, tags: list[str]):
             db.execute("INSERT OR IGNORE INTO longform_tags (post_id, tag) VALUES (?, ?)", (post_id, tag))
 
 
+def _get_post_people(db, post_id: int) -> list[dict]:
+    rows = db.execute(
+        "SELECT p.id, p.name FROM longform_post_people lpp "
+        "JOIN people p ON lpp.person_id = p.id WHERE lpp.post_id = ? ORDER BY p.name",
+        (post_id,),
+    ).fetchall()
+    return [{"id": r["id"], "name": r["name"]} for r in rows]
+
+
+def _set_post_people(db, post_id: int, person_ids: list[str]):
+    db.execute("DELETE FROM longform_post_people WHERE post_id = ?", (post_id,))
+    for pid in person_ids:
+        db.execute(
+            "INSERT OR IGNORE INTO longform_post_people (post_id, person_id) VALUES (?, ?)",
+            (post_id, pid),
+        )
+
+
 def _get_post_comments(db, post_id: int) -> tuple[list[dict], list[dict]]:
     """Return (comments, thoughts) for a post."""
     rows = db.execute(
@@ -64,6 +82,7 @@ def _get_post_comments(db, post_id: int) -> tuple[list[dict], list[dict]]:
 def _post_to_dict(db, row) -> dict:
     post = dict(row)
     post["tags"] = _get_post_tags(db, post["id"])
+    post["people"] = _get_post_people(db, post["id"])
     # Count comments and thoughts
     counts = db.execute(
         "SELECT is_thought, COUNT(*) as cnt FROM longform_comments WHERE post_id = ? GROUP BY is_thought",
@@ -161,6 +180,8 @@ def create_post(post: LongformCreate):
 
         if post.tags:
             _set_post_tags(db, post_id, post.tags)
+        if post.person_ids:
+            _set_post_people(db, post_id, post.person_ids)
 
         db.commit()
         row = db.execute("SELECT * FROM longform_posts WHERE id = ?", (post_id,)).fetchone()
@@ -187,9 +208,10 @@ def update_post(post_id: int, update: LongformUpdate):
             raise HTTPException(status_code=404, detail="Post not found")
 
         new_tags = update.tags
+        new_person_ids = update.person_ids
         update_fields = {}
         for field, value in update.model_dump(exclude_unset=True).items():
-            if field == "tags":
+            if field in ("tags", "person_ids"):
                 continue
             if field == "status" and value is not None:
                 value = value.lower()
@@ -218,6 +240,8 @@ def update_post(post_id: int, update: LongformUpdate):
 
         if new_tags is not None:
             _set_post_tags(db, post_id, new_tags)
+        if new_person_ids is not None:
+            _set_post_people(db, post_id, new_person_ids)
 
         db.commit()
         row = db.execute("SELECT * FROM longform_posts WHERE id = ?", (post_id,)).fetchone()

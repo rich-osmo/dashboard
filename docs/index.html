@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Personal Dashboard — Your work, unified</title>
+  <meta name="description" content="A local-first macOS app that unifies your email, calendar, Slack, meetings, notes, and more into a single quiet interface.">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Hero -->
+  <section class="hero">
+    <img src="icon.svg" alt="Personal Dashboard" class="hero-icon">
+    <h1>Personal Dashboard</h1>
+    <p class="tagline">Your email, calendar, Slack, meetings, and more &mdash; unified in a quiet macOS app.</p>
+    <a href="https://github.com/rich-osmo/dashboard/releases/latest" class="download-btn">Download for Mac</a>
+    <p class="download-note">macOS 12+ &middot; Apple Silicon (Intel via Rosetta) &middot; Free &amp; open source</p>
+  </section>
+
+  <!-- Screenshots -->
+  <section class="screenshots container">
+    <div class="screenshot-grid">
+      <div class="screenshot-card">
+        <div class="placeholder">Screenshot coming soon</div>
+        <h3>Morning Briefing</h3>
+        <p>Weather, inbox pulse, today's calendar, and AI-ranked priorities at a glance.</p>
+      </div>
+      <div class="screenshot-card">
+        <div class="placeholder">Screenshot coming soon</div>
+        <h3>People &amp; 1:1s</h3>
+        <p>Org chart, meeting history, notes, and context for everyone you work with.</p>
+      </div>
+      <div class="screenshot-card">
+        <div class="placeholder">Screenshot coming soon</div>
+        <h3>Notes &amp; Issues</h3>
+        <p>Quick notes with @mentions, issue tracking, and AI-powered issue discovery.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section class="features container">
+    <h2>Everything in one place</h2>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <h3>Morning Briefing</h3>
+        <p>Start your day with weather, inbox highlights, calendar overview, and AI-ranked priorities.</p>
+      </div>
+      <div class="feature-card">
+        <h3>People &amp; Teams</h3>
+        <p>Org chart, 1:1 topic tracking, meeting history, and relationship context across all your tools.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Notes &amp; Issues</h3>
+        <p>Quick capture with @mention linking, priority levels, due dates, and AI-powered issue discovery.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Unified Inbox</h3>
+        <p>Gmail, Slack, Notion, GitHub, and Google Drive &mdash; searchable from one interface.</p>
+      </div>
+      <div class="feature-card">
+        <h3>AI Priorities</h3>
+        <p>Gemini-powered priority ranking surfaces what matters most each morning.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Full-Text Search</h3>
+        <p>Search across emails, notes, meetings, issues, and people instantly.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Plugin Connectors</h3>
+        <p>Gmail, Calendar, Slack, Notion, GitHub, Ramp, Granola, Google Drive, and more.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Keyboard-Driven</h3>
+        <p>Navigate everything with keyboard shortcuts. Built for speed.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section class="how-it-works container">
+    <h2>Get started in three steps</h2>
+    <div class="steps">
+      <div>
+        <div class="step-number">1</div>
+        <h3>Download the app</h3>
+        <p>Download the DMG, drag to Applications, and launch.</p>
+      </div>
+      <div>
+        <div class="step-number">2</div>
+        <h3>Connect your services</h3>
+        <p>Link Gmail, Slack, Notion, and other tools in Settings. All data stays on your Mac.</p>
+      </div>
+      <div>
+        <div class="step-number">3</div>
+        <h3>Start your briefing</h3>
+        <p>Open the app each morning for a unified view of your day.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Philosophy -->
+  <section class="philosophy container">
+    <h2>Local-first. Private. Open source.</h2>
+    <p>Your data never leaves your Mac. No accounts, no cloud sync, no tracking. Everything is stored locally in SQLite.</p>
+    <p>Built with FastAPI, React, and pywebview. Styled with Tufte CSS.</p>
+    <div class="badge-row">
+      <span class="badge">MIT License</span>
+      <span class="badge">Local-only</span>
+      <span class="badge">No telemetry</span>
+      <span class="badge">Open source</span>
+    </div>
+  </section>
+
+  <!-- Gatekeeper notice -->
+  <section class="gatekeeper container">
+    <details>
+      <summary>First launch: macOS may show a security warning</summary>
+      <div class="instructions">
+        <p>Since the app is not signed with an Apple Developer certificate, macOS Gatekeeper will block it on first launch. To open it:</p>
+        <ol>
+          <li>Right-click (or Control-click) on <code>Dashboard.app</code></li>
+          <li>Select <strong>Open</strong> from the context menu</li>
+          <li>Click <strong>Open</strong> in the confirmation dialog</li>
+        </ol>
+        <p>You only need to do this once. Alternatively, go to <strong>System Settings &rarr; Privacy &amp; Security</strong> and click <strong>Open Anyway</strong>.</p>
+      </div>
+    </details>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer container">
+    <p>
+      <a href="https://github.com/rich-osmo/dashboard">GitHub</a> &middot;
+      MIT License &middot;
+      Made by <a href="https://github.com/rich-osmo">Rich Whitcomb</a>
+    </p>
+  </footer>
+
+</body>
+</html>

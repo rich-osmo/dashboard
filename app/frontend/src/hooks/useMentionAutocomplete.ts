@@ -48,11 +48,10 @@ export function useMentionAutocomplete(people: Person[] | undefined) {
   }, []);
 
   const selectPerson = useCallback((text: string, emp: Person): string => {
-    const firstName = emp.name.split(' ')[0];
     const before = text.slice(0, mentionStart);
     const cursor = inputRef.current?.selectionStart ?? text.length;
     const after = text.slice(cursor);
-    const newText = `${before}@${firstName} ${after}`;
+    const newText = `${before}@${emp.name} ${after}`;
     dismiss();
     return newText;
   }, [mentionStart, dismiss]);

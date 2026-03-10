@@ -1,7 +1,7 @@
-fastapi==0.115.0
+fastapi>=0.115.0
 uvicorn[standard]==0.34.0
 python-dotenv==1.0.1
-pydantic==2.10.0
+pydantic>=2.11.0
 google-auth==2.38.0
 google-auth-oauthlib==1.2.1
 google-api-python-client==2.165.0
@@ -10,3 +10,5 @@ httpx==0.28.0
 google-genai>=1.0.0
 ruff>=0.8.0
 alembic==1.14.0
+strawberry-graphql[fastapi]>=0.236.0
+mcp>=1.0.0

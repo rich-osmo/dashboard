@@ -32,6 +32,7 @@ Dev logs: `/tmp/dashboard-backend.log`, `/tmp/dashboard-frontend.log`
 | Styling | Custom Tufte CSS (`app/frontend/src/styles/tufte.css`) — no Tailwind/MUI |
 | Native app | pywebview wrapping the web frontend |
 | AI | Gemini 2.0 Flash (morning priorities) |
+| GraphQL | Strawberry GraphQL at `/graphql` — knowledge graph over all data |
 | Terminal | xterm.js via WebSocket PTY for embedded Claude Code |
 
 ## Configuration & Data
@@ -192,6 +193,8 @@ Drive: `drive_files`
 GitHub: `github_pull_requests`
 
 Ramp: `ramp_transactions`, `ramp_bills`, `ramp_vendors`
+
+Knowledge graph links: `email_people`, `calendar_event_people`, `drive_file_people` (+ `person_id` columns on `slack_messages`, `github_pull_requests`, `ramp_transactions`)
 
 Claude: `personas`, `claude_sessions`, `claude_session_notes`
 
@@ -421,18 +424,162 @@ curl -s "http://localhost:8000/api/calendar/search?q=standup" | python3 -m json.
 
 #### Slack
 ```bash
+# Read
 curl -s "http://localhost:8000/api/slack/search?q=deployment+in:%23engineering&count=20" | python3 -m json.tool
 curl -s http://localhost:8000/api/slack/channels | python3 -m json.tool
+
+# Write
 curl -s -X POST http://localhost:8000/api/slack/send \
   -H "Content-Type: application/json" \
   -d '{"channel": "C12345", "text": "Hello!"}'
+
+curl -s -X PATCH http://localhost:8000/api/slack/message \
+  -H "Content-Type: application/json" \
+  -d '{"channel": "C12345", "ts": "1234567890.123456", "text": "Updated message"}'
+
+curl -s -X DELETE "http://localhost:8000/api/slack/message?channel=C12345&ts=1234567890.123456"
+
+curl -s -X POST http://localhost:8000/api/slack/react \
+  -H "Content-Type: application/json" \
+  -d '{"channel": "C12345", "ts": "1234567890.123456", "name": "thumbsup"}'
 ```
 
 #### Notion
 ```bash
+# Read
 curl -s "http://localhost:8000/api/notion/search?q=roadmap&page_size=10" | python3 -m json.tool
 curl -s http://localhost:8000/api/notion/pages/{page_id}/content | python3 -m json.tool
+
+# Write
+curl -s -X POST http://localhost:8000/api/notion/pages \
+  -H "Content-Type: application/json" \
+  -d '{"parent_id": "db_id_here", "title": "Meeting Notes"}'
+
+curl -s -X PATCH http://localhost:8000/api/notion/pages/{page_id}/properties \
+  -H "Content-Type: application/json" \
+  -d '{"properties": {"Status": {"select": {"name": "Done"}}}}'
+
+curl -s -X POST http://localhost:8000/api/notion/pages/{page_id}/blocks \
+  -H "Content-Type: application/json" \
+  -d '{"text": "New paragraph content to append"}'
+
+curl -s -X DELETE http://localhost:8000/api/notion/pages/{page_id}
 ```
+
+#### Gmail (Write)
+```bash
+curl -s -X POST http://localhost:8000/api/gmail/send \
+  -H "Content-Type: application/json" \
+  -d '{"to": "alice@example.com", "subject": "Re: Q1 Review", "body": "Sounds good!", "reply_to_thread_id": "thread123"}'
+
+curl -s -X POST http://localhost:8000/api/gmail/drafts \
+  -H "Content-Type: application/json" \
+  -d '{"to": "bob@example.com", "subject": "Draft", "body": "..."}'
+
+curl -s http://localhost:8000/api/gmail/drafts | python3 -m json.tool
+
+curl -s -X POST http://localhost:8000/api/gmail/archive \
+  -H "Content-Type: application/json" \
+  -d '{"message_ids": ["msg_id_1", "msg_id_2"]}'
+
+curl -s -X POST http://localhost:8000/api/gmail/trash \
+  -H "Content-Type: application/json" \
+  -d '{"message_ids": ["msg_id_1"]}'
+```
+
+#### Calendar (Write)
+```bash
+curl -s -X POST http://localhost:8000/api/calendar/events \
+  -H "Content-Type: application/json" \
+  -d '{"summary": "1:1 with Alice", "start_time": "2026-03-04T10:00:00-08:00", "end_time": "2026-03-04T10:30:00-08:00", "attendees": ["alice@example.com"]}'
+
+curl -s -X PATCH http://localhost:8000/api/calendar/events/{event_id} \
+  -H "Content-Type: application/json" \
+  -d '{"summary": "Updated title", "location": "Room 5"}'
+
+curl -s -X DELETE "http://localhost:8000/api/calendar/events/{event_id}?send_notifications=true"
+
+curl -s -X POST http://localhost:8000/api/calendar/events/{event_id}/rsvp \
+  -H "Content-Type: application/json" \
+  -d '{"response": "accepted"}'
+```
+
+#### Docs/Sheets (Write)
+```bash
+curl -s -X POST http://localhost:8000/api/drive/docs \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Q1 Retrospective", "body": "# Summary\n..."}'
+
+curl -s -X POST http://localhost:8000/api/drive/docs/{doc_id}/append \
+  -H "Content-Type: application/json" \
+  -d '{"text": "New section content here"}'
+
+curl -s -X POST http://localhost:8000/api/sheets/{sheet_id}/append \
+  -H "Content-Type: application/json" \
+  -d '{"range": "Sheet1", "values": [["Name", "Score"], ["Alice", "95"]]}'
+
+curl -s -X PATCH http://localhost:8000/api/sheets/{sheet_id}/values \
+  -H "Content-Type: application/json" \
+  -d '{"range": "Sheet1!A1:B1", "values": [["Updated", "Values"]]}'
+```
+
+### GraphQL API (Knowledge Graph)
+
+The GraphQL endpoint is at `http://localhost:8000/graphql`. It also serves a GraphiQL playground in the browser. The graph links people to all data sources — emails, Slack, calendar, GitHub, Drive, Ramp, notes, issues, and meetings.
+
+#### Example Queries
+
+**Person with all connected data:**
+```graphql
+query PersonContext($id: String!) {
+  person(id: $id) {
+    name title email
+    manager { name title }
+    directReports { name title }
+    notes { text priority status dueDate }
+    issues { title status priority tags }
+    emails { subject fromName date }
+    slackMessages { text channelName ts }
+    calendarEvents { summary startTime endTime }
+    githubPrs { title state author }
+    driveFiles { name modifiedTime }
+    rampTransactions { amount merchantName transactionDate }
+    granolaMeetings { title panelSummaryPlain }
+  }
+}
+```
+
+**Search across all entities:**
+```graphql
+{ search(query: "quarterly review") { people { name } notes { text } issues { title } emails { subject } total } }
+```
+
+**CRUD mutations (local data):**
+```graphql
+mutation { createNote(text: "@Alice discuss perf review", priority: 1) { id text people { name } } }
+mutation { createIssue(title: "Fix login", priority: 2, tags: ["frontend"]) { id title tags } }
+mutation { updateIssue(id: 5, status: "done") { id status completedAt } }
+```
+
+**External service mutations:**
+```graphql
+mutation { sendSlackMessage(channel: "C12345", text: "Hello!") }
+mutation { addSlackReaction(channel: "C12345", ts: "1234567890.123456", name: "thumbsup") }
+mutation { createNotionPage(parentId: "db_id", title: "Meeting Notes") }
+mutation { appendNotionText(pageId: "page_id", text: "New content") }
+mutation { archiveNotionPage(pageId: "page_id") }
+mutation { sendEmail(to: "alice@example.com", subject: "Hello", body: "...") }
+mutation { archiveEmails(messageIds: ["msg_1", "msg_2"]) }
+mutation { createCalendarEvent(summary: "1:1", startTime: "2026-03-04T10:00:00-08:00", endTime: "2026-03-04T10:30:00-08:00") }
+mutation { deleteCalendarEvent(eventId: "event_id") }
+mutation { rsvpCalendarEvent(eventId: "event_id", response: "accepted") }
+mutation { createGoogleDoc(title: "Q1 Retro", body: "# Summary") }
+mutation { appendToGoogleDoc(docId: "doc_id", text: "New section") }
+mutation { appendSheetRows(sheetId: "sheet_id", values: [["A", "B"], ["1", "2"]]) }
+mutation { updateSheetCells(sheetId: "sheet_id", range: "Sheet1!A1", values: [["Updated"]]) }
+```
+
+**Root queries:** `person(id)`, `people(isCoworker, group)`, `notes(status, personId)`, `issues(status, priority)`, `emails(limit)`, `slackMessages(limit)`, `calendarEvents(fromDate, toDate)`, `githubPrs(state)`, `driveFiles(limit)`, `rampTransactions(limit)`, `projects`, `longformPosts(status)`, `news(limit, offset)`, `search(query)`
 
 ### Direct SQLite Access
 

@@ -25,7 +25,7 @@ import type {
   GitHubPullRequestDetail,
   GitHubSearchResult,
   GitHubCodeSearchResult,
-  GranolaMeeting,
+  MeetingNote,
   MeetingsResponse,
   SlackMessage,
   PrioritizedSlackData,
@@ -275,6 +275,8 @@ export function useSync() {
     mutationFn: () => api.post('/sync'),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['sync-status'] });
+      qc.invalidateQueries({ queryKey: ['people'] });
+      qc.invalidateQueries({ queryKey: ['groups'] });
     },
   });
 }
@@ -308,6 +310,14 @@ export function useGoogleAuth() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.post<{ status: string; error?: string }>('/auth/google'),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['auth-status'] }),
+  });
+}
+
+export function useGranolaAuth() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ status: string; error?: string }>('/auth/granola/connect'),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['auth-status'] }),
   });
 }
@@ -543,7 +553,7 @@ export function useLongformTags() {
 export function useCreateLongform() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (post: { title?: string; body?: string; status?: string; tags?: string[] }) =>
+    mutationFn: (post: { title?: string; body?: string; status?: string; tags?: string[]; person_ids?: string[] }) =>
       api.post<LongformPost>('/longform', post),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['longform'] });
@@ -555,11 +565,21 @@ export function useCreateLongform() {
 export function useUpdateLongform() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...update }: { id: number; title?: string; body?: string; status?: string; tags?: string[] }) =>
-      api.patch<LongformPostDetail>(`/longform/${id}`, update),
+    mutationFn: ({
+      id,
+      ...update
+    }: {
+      id: number;
+      title?: string;
+      body?: string;
+      status?: string;
+      tags?: string[];
+      person_ids?: string[];
+    }) => api.patch<LongformPostDetail>(`/longform/${id}`, update),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['longform'] });
       qc.invalidateQueries({ queryKey: ['search'] });
+      qc.invalidateQueries({ queryKey: ['person'] });
     },
   });
 }
@@ -990,14 +1010,25 @@ export function useMeetings(tab: 'upcoming' | 'past') {
   });
 }
 
-export function useAllGranola() {
+export function useAllMeetingNotes(provider?: string) {
+  const params = provider ? `&provider=${provider}` : '';
   return useInfiniteQuery({
-    queryKey: ['all-granola'],
+    queryKey: ['all-meeting-notes', provider],
     queryFn: ({ pageParam = 0 }) =>
-      api.get<PaginatedResponse<GranolaMeeting>>(`/meetings/granola/all?offset=${pageParam}&limit=${ALL_ITEMS_PAGE_SIZE}`),
+      api.get<PaginatedResponse<MeetingNote>>(`/meetings/notes/all?offset=${pageParam}&limit=${ALL_ITEMS_PAGE_SIZE}${params}`),
     initialPageParam: 0,
     getNextPageParam: (lastPage) =>
       lastPage.has_more ? lastPage.offset + lastPage.limit : undefined,
+  });
+}
+
+// Legacy alias
+export const useAllGranola = () => useAllMeetingNotes('granola');
+
+export function useMeetingNotesProviders() {
+  return useQuery({
+    queryKey: ['connectors-meeting-notes'],
+    queryFn: () => api.get<ConnectorInfo[]>('/auth/connectors?capability=meeting_notes'),
   });
 }
 
@@ -1009,7 +1040,7 @@ export function useUpsertMeetingNote() {
       refId,
       content,
     }: {
-      refType: 'calendar' | 'granola';
+      refType: 'calendar' | 'granola' | 'external';
       refId: string;
       content: string;
     }) => api.post(`/meetings/${refType}/${refId}/notes`, { content }),
@@ -1026,7 +1057,7 @@ export function useDeleteMeetingNote() {
       refType,
       refId,
     }: {
-      refType: 'calendar' | 'granola';
+      refType: 'calendar' | 'granola' | 'external';
       refId: string;
     }) => api.delete(`/meetings/${refType}/${refId}/notes`),
     onSuccess: () => {
@@ -1439,6 +1470,18 @@ export function useToggleConnector() {
   return useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
       api.post(`/auth/connectors/${id}/${enabled ? 'enable' : 'disable'}`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['connectors'] });
+      qc.invalidateQueries({ queryKey: ['auth-status'] });
+    },
+  });
+}
+
+export function useSetGoogleAccessMode() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (mode: 'readonly' | 'readwrite') =>
+      api.post<{ status: string; mode: string; needs_reauth: boolean }>('/auth/google/access-mode', { mode }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['connectors'] });
       qc.invalidateQueries({ queryKey: ['auth-status'] });

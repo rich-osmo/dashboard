@@ -1,7 +1,9 @@
 import { useState, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { usePeople, useGroups, useCreatePerson, useDeletePerson } from '../api/hooks';
 import type { Person } from '../api/types';
+import { useFocusNavigation } from '../hooks/useFocusNavigation';
+import { KeyboardHints } from '../components/shared/KeyboardHints';
 
 type FilterTab = 'all' | 'coworkers' | 'contacts';
 
@@ -22,6 +24,7 @@ export function PeoplePage() {
 
   const { data: people, isLoading } = usePeople(apiFilters);
   const { data: groups } = useGroups();
+  const navigate = useNavigate();
   const createPerson = useCreatePerson();
   const deletePerson = useDeletePerson();
 
@@ -37,6 +40,13 @@ export function PeoplePage() {
         (p.title && p.title.toLowerCase().includes(q))
     );
   }, [people, search]);
+
+  const { containerRef } = useFocusNavigation({
+    selector: '.people-table-row',
+    onOpen: (i) => {
+      if (filtered[i]) navigate(`/people/${filtered[i].id}`);
+    },
+  });
 
   return (
     <div>
@@ -110,6 +120,7 @@ export function PeoplePage() {
       )}
 
       {filtered.length > 0 && (
+        <div ref={containerRef}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--color-border)', textAlign: 'left' }}>
@@ -135,18 +146,22 @@ export function PeoplePage() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
 
       <div style={{ marginTop: 'var(--space-md)', fontSize: 'var(--text-xs)', color: 'var(--color-text-light)' }}>
         {filtered.length > 0 && `${filtered.length} ${filtered.length === 1 ? 'person' : 'people'}`}
       </div>
+      {filtered.length > 0 && (
+        <KeyboardHints hints={['j/k navigate', 'Enter open']} />
+      )}
     </div>
   );
 }
 
 function PersonRow({ person, onDelete }: { person: Person; onDelete: () => void }) {
   return (
-    <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
+    <tr className="people-table-row" style={{ borderBottom: '1px solid var(--color-border)' }}>
       <td style={{ padding: 'var(--space-sm)' }}>
         <Link to={`/people/${person.id}`}>{person.name}</Link>
       </td>

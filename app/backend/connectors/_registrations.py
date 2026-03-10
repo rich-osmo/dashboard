@@ -72,7 +72,7 @@ register(
     ConnectorInfo(
         id="notion",
         name="Notion",
-        description="Recently edited pages and search",
+        description="Pages, databases, and meeting notes",
         category="token",
         secret_keys=["NOTION_TOKEN"],
         help_steps=[
@@ -86,6 +86,7 @@ register(
         default_enabled=False,
         sync_fn="connectors.notion.sync_notion_pages",
         check_fn="routers.auth._check_notion",
+        capabilities=["meeting_notes", "pages"],
     )
 )
 
@@ -115,19 +116,20 @@ register(
     ConnectorInfo(
         id="granola",
         name="Granola",
-        description="Meeting transcriptions and notes (local cache)",
-        category="local",
+        description="Meeting notes and transcripts via Granola MCP",
+        category="oauth",
         secret_keys=[],
         help_steps=[
-            "Install Granola from granola.ai",
-            "Record at least one meeting",
-            "The dashboard reads from Granola's local cache automatically",
+            "Install Granola from granola.ai and record at least one meeting",
+            "Enable this connector and click Sync — you'll be prompted to authorize",
+            "OAuth tokens are stored locally in ~/.personal-dashboard/",
         ],
-        help_url="https://granola.ai",
+        help_url="https://www.granola.ai/blog/granola-mcp",
         sync_sources=["granola"],
         default_enabled=False,
         sync_fn="connectors.granola.sync_granola_meetings",
         check_fn="routers.auth._check_granola",
+        capabilities=["meeting_notes"],
     )
 )
 

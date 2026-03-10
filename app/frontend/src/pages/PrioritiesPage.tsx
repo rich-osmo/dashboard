@@ -2,6 +2,7 @@ import { useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { usePriorities, useRefreshPriorities, useDismissPriority, useConnectors } from '../api/hooks';
 import { useFocusNavigation } from '../hooks/useFocusNavigation';
+import { KeyboardHints } from '../components/shared/KeyboardHints';
 
 const SOURCE_LABELS: Record<string, string> = {
   slack: 'Slack',
@@ -99,6 +100,9 @@ export function PrioritiesPage() {
           <div className="priority-item-reason">{item.reason}</div>
         </div>
       ))}
+      {items.length > 0 && (
+        <KeyboardHints hints={['j/k navigate', 'Enter open', 'd dismiss']} />
+      )}
     </div>
   );
 }
