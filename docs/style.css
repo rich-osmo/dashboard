@@ -64,9 +64,17 @@ body {
 .hero .tagline {
   font-size: 1.2rem;
   color: var(--color-text-muted);
-  max-width: 540px;
-  margin: 0 auto 32px;
+  max-width: 580px;
+  margin: 0 auto 16px;
   font-style: italic;
+}
+
+.hero-subtitle {
+  font-size: 0.95rem;
+  color: var(--color-text-light);
+  max-width: 560px;
+  margin: 0 auto 32px;
+  line-height: 1.5;
 }
 
 .download-btn {
