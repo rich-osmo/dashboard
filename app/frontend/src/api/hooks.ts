@@ -1334,19 +1334,32 @@ export function useDismissPrioritizedItem() {
     mutationFn: (body: { source: string; item_id: string }) =>
       api.post('/dashboard/dismiss', body),
     onMutate: async ({ source, item_id }) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const snapshots: [readonly unknown[], any][] = [];
       if (source === 'github') {
         await qc.cancelQueries({ queryKey: ['github-pulls'] });
         const allQueries = qc.getQueriesData<{ total: number; count: number; pulls: GitHubPullRequest[] }>({ queryKey: ['github-pulls'] });
-        const snapshots: [readonly unknown[], { total: number; count: number; pulls: GitHubPullRequest[] }][] = [];
         for (const [key, data] of allQueries) {
           if (!data) continue;
           snapshots.push([key, data]);
           const filtered = data.pulls.filter((pr) => String(pr.number) !== item_id);
           qc.setQueryData(key, { ...data, count: filtered.length, pulls: filtered });
         }
-        return { snapshots };
+      } else {
+        // Optimistic dismiss for all prioritized sources (slack, email, notion, ramp, news, drive)
+        const keyMap: Record<string, string> = { slack: 'slack-prioritized', email: 'email-prioritized', notion: 'notion-prioritized', ramp: 'ramp-prioritized', news: 'news-prioritized', drive: 'drive-prioritized' };
+        const qkPrefix = keyMap[source];
+        if (qkPrefix) {
+          await qc.cancelQueries({ queryKey: [qkPrefix] });
+          const allQueries = qc.getQueriesData<{ items: { id: string }[] }>({ queryKey: [qkPrefix] });
+          for (const [key, data] of allQueries) {
+            if (!data?.items) continue;
+            snapshots.push([key, data]);
+            qc.setQueryData(key, { ...data, items: data.items.filter((it) => it.id !== item_id) });
+          }
+        }
       }
-      return { snapshots: [] };
+      return { snapshots };
     },
     onSuccess: (_data, { source, item_id }) => {
       qc.invalidateQueries({ queryKey: ['slack-prioritized'] });

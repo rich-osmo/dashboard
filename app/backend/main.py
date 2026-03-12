@@ -33,6 +33,7 @@ from routers import (
     calendar_api,
     claude,
     claude_sessions,
+    dashboard,
     drive_api,
     github_api,
     gmail,
@@ -92,6 +93,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 app.add_middleware(SecurityHeadersMiddleware)
 
 # API routes (must be registered before the SPA catch-all)
+app.include_router(dashboard.router)
 app.include_router(people.router)
 app.include_router(notes.router)
 app.include_router(sync.router)

@@ -162,7 +162,7 @@ def _score_batch_with_gemini(genai_client, page_summaries: list[dict], context_s
     )
 
     response = genai_client.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-3-flash-preview",
         contents=user_message,
         config={
             "system_instruction": _build_scoring_prompt(),

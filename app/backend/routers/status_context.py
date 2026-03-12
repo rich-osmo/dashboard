@@ -66,10 +66,9 @@ def _build_raw_context(db) -> dict:
     open_issues = [
         dict(r)
         for r in db.execute(
-            "SELECT title, description, priority, size, tags, due_date "
+            "SELECT title, description, priority, tshirt_size, due_date "
             "FROM issues WHERE status != 'done' "
-            "ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 "
-            "WHEN 'medium' THEN 2 ELSE 3 END, created_at DESC LIMIT 15"
+            "ORDER BY priority DESC, created_at DESC LIMIT 15"
         ).fetchall()
     ]
 
@@ -198,8 +197,8 @@ def _build_fallback_context(context: dict) -> str:
     if context["open_issues"]:
         lines.append("\n## Active Issues")
         for i in context["open_issues"][:8]:
-            tags = f" [{i['tags']}]" if i.get("tags") else ""
-            lines.append(f"- [{i.get('priority', '?')}] {i['title']}{tags}")
+            size = f" [{i['tshirt_size']}]" if i.get("tshirt_size") else ""
+            lines.append(f"- [P{i.get('priority', '?')}] {i['title']}{size}")
 
     if context["emails_recent"]:
         lines.append("\n## Recent Email Threads")
