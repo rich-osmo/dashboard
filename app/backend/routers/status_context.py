@@ -129,7 +129,7 @@ def _build_raw_context(db) -> dict:
     longform_drafts = [
         dict(r)
         for r in db.execute(
-            "SELECT title, tags, word_count, updated_at "
+            "SELECT title, word_count, updated_at "
             "FROM longform_posts WHERE status = 'draft' "
             "ORDER BY updated_at DESC LIMIT 5"
         ).fetchall()
