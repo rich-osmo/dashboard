@@ -47,7 +47,7 @@
   <text x="222" y="146" font-family="Georgia, serif" font-size="9" fill="#a00000">urgent</text>
   <text x="260" y="148" font-family="Georgia, serif" font-size="12" fill="#111" font-weight="600">Q1 Budget Review — Action Required</text>
   <text x="260" y="164" font-family="Georgia, serif" font-size="11" fill="#555">Please review the attached budget proposal before tomorrow's meeting. Key changes to the eng headcount...</text>
-  <text x="260" y="178" font-family="Georgia, serif" font-size="10" fill="#888">Finance Team &middot; 2 hours ago</text>
+  <text x="260" y="178" font-family="Georgia, serif" font-size="10" fill="#888">Finance Team &#xB7; 2 hours ago</text>
   <circle cx="754" cy="156" r="4" fill="#a00000" opacity="0.6"/>
 
   <!-- Email 2 -->
@@ -55,28 +55,28 @@
   <rect x="204" y="194" width="3" height="60" rx="1.5" fill="#4a90d9"/>
   <text x="220" y="216" font-family="Georgia, serif" font-size="12" fill="#111" font-weight="600">Re: API Migration Timeline</text>
   <text x="220" y="232" font-family="Georgia, serif" font-size="11" fill="#555">Updated the migration doc with the new timeline. We should be able to cut over by end of sprint 14...</text>
-  <text x="220" y="246" font-family="Georgia, serif" font-size="10" fill="#888">Alice Johnson &middot; 3 hours ago</text>
+  <text x="220" y="246" font-family="Georgia, serif" font-size="10" fill="#888">Alice Johnson &#xB7; 3 hours ago</text>
 
   <!-- Email 3 -->
   <rect x="204" y="262" width="568" height="60" rx="4" fill="#fffff8" stroke="#e0ddd1" stroke-width="0.5"/>
   <rect x="204" y="262" width="3" height="60" rx="1.5" fill="#e8a735"/>
   <text x="220" y="284" font-family="Georgia, serif" font-size="12" fill="#111">Design Review Feedback</text>
   <text x="220" y="300" font-family="Georgia, serif" font-size="11" fill="#555">Great progress on the new onboarding flow. A few suggestions on the second screen layout...</text>
-  <text x="220" y="314" font-family="Georgia, serif" font-size="10" fill="#888">Carol Lee &middot; 5 hours ago</text>
+  <text x="220" y="314" font-family="Georgia, serif" font-size="10" fill="#888">Carol Lee &#xB7; 5 hours ago</text>
 
   <!-- Email 4 -->
   <rect x="204" y="330" width="568" height="60" rx="4" fill="#fffff8" stroke="#e0ddd1" stroke-width="0.5"/>
   <rect x="204" y="330" width="3" height="60" rx="1.5" fill="#28a060"/>
   <text x="220" y="352" font-family="Georgia, serif" font-size="12" fill="#111">Weekly Metrics Report</text>
   <text x="220" y="368" font-family="Georgia, serif" font-size="11" fill="#555">This week's engagement numbers are attached. Notable increase in retention across the new cohort...</text>
-  <text x="220" y="382" font-family="Georgia, serif" font-size="10" fill="#888">Data Team &middot; 8 hours ago</text>
+  <text x="220" y="382" font-family="Georgia, serif" font-size="10" fill="#888">Data Team &#xB7; 8 hours ago</text>
 
   <!-- Email 5 (partially visible) -->
   <rect x="204" y="398" width="568" height="60" rx="4" fill="#fffff8" stroke="#e0ddd1" stroke-width="0.5"/>
   <rect x="204" y="398" width="3" height="60" rx="1.5" fill="#888"/>
   <text x="220" y="420" font-family="Georgia, serif" font-size="12" fill="#555">Team Offsite Planning</text>
   <text x="220" y="436" font-family="Georgia, serif" font-size="11" fill="#888">Quick poll on preferred dates for the Q2 offsite. Please vote by Friday...</text>
-  <text x="220" y="450" font-family="Georgia, serif" font-size="10" fill="#bbb">Bob Kim &middot; Yesterday</text>
+  <text x="220" y="450" font-family="Georgia, serif" font-size="10" fill="#bbb">Bob Kim &#xB7; Yesterday</text>
 
   <!-- Scroll indicator -->
   <rect x="770" y="130" width="3" height="80" rx="1.5" fill="#e0ddd1"/>
