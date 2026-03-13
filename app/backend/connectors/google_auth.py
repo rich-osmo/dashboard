@@ -103,15 +103,22 @@ def get_google_credentials() -> Credentials:
 
 def run_oauth_flow() -> Credentials:
     """Run browser-based OAuth flow using ADC client credentials."""
+    import subprocess
+    import webbrowser
+
     from google_auth_oauthlib.flow import InstalledAppFlow
 
+    logger.info("Starting Google OAuth flow...")
+
     if not GCLOUD_CREDENTIALS_PATH.exists():
+        logger.error("No gcloud credentials at %s", GCLOUD_CREDENTIALS_PATH)
         raise FileNotFoundError("No gcloud credentials found")
 
     with open(GCLOUD_CREDENTIALS_PATH) as f:
         cred_data = json.load(f)
 
     scopes = get_google_scopes()
+    logger.info("OAuth scopes: %s", scopes)
     client_config = {
         "installed": {
             "client_id": cred_data["client_id"],
@@ -123,10 +130,31 @@ def run_oauth_flow() -> Credentials:
     }
 
     flow = InstalledAppFlow.from_client_config(client_config, scopes)
-    creds = flow.run_local_server(port=8080, open_browser=True)
+
+    # In pywebview (DMG app), webbrowser.open() can silently fail because
+    # PyInstaller bundles may not find the system browser correctly.
+    # Monkey-patch webbrowser.open to use macOS `open` command which always works.
+    _orig_open = webbrowser.open
+
+    def _open_via_macos(url, *args, **kwargs):
+        logger.info("Opening OAuth URL in system browser: %s", url[:80] + "...")
+        try:
+            subprocess.Popen(["open", url])
+            return True
+        except Exception:
+            logger.warning("macOS `open` failed, falling back to webbrowser.open")
+            return _orig_open(url, *args, **kwargs)
+
+    webbrowser.open = _open_via_macos
+    try:
+        logger.info("Waiting for OAuth callback on port 8080...")
+        creds = flow.run_local_server(port=8080, open_browser=True)
+    finally:
+        webbrowser.open = _orig_open
 
     global _cached_creds
     _cached_creds = creds
     TOKEN_PATH.write_text(creds.to_json())
     os.chmod(TOKEN_PATH, stat.S_IRUSR | stat.S_IWUSR)
+    logger.info("OAuth flow completed, token saved to %s", TOKEN_PATH)
     return creds

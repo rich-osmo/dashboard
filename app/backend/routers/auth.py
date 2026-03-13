@@ -317,6 +317,7 @@ def google_scopes():
 @router.post("/google")
 def google_auth():
     """Trigger browser-based Google OAuth flow."""
+    logger.info("POST /api/auth/google — starting OAuth flow")
     try:
         from connectors.google_auth import run_oauth_flow
 
@@ -324,10 +325,11 @@ def google_auth():
         # Clear stale sync errors for all Google-related sources
         _clear_sync_errors(_AUTH_TO_SYNC.get("google", []))
         _clear_sync_errors(_AUTH_TO_SYNC.get("google_drive", []))
+        logger.info("POST /api/auth/google — OAuth flow completed successfully")
         return {"status": "authenticated"}
-    except Exception:
-        logger.exception("Google OAuth flow failed")
-        return {"status": "error", "error": "OAuth flow failed"}
+    except Exception as e:
+        logger.exception("Google OAuth flow failed: %s", e)
+        return {"status": "error", "error": f"OAuth flow failed: {e}"}
 
 
 @router.post("/google/revoke")
