@@ -39,6 +39,18 @@ if ((window as any).pywebview) {
   });
 }
 
+// Log frontend startup to backend for DMG debugging
+fetch('/api/frontend-errors', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    errors: [{
+      source: 'console',
+      message: `Frontend loaded — ${navigator.userAgent}`,
+    }],
+  }),
+}).catch(() => {});
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />

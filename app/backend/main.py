@@ -1,9 +1,13 @@
+import logging
 import os
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 from config import get_backend_root, is_bundled
+
+log = logging.getLogger("startup")
 
 load_dotenv(get_backend_root() / ".env")
 
@@ -14,8 +18,9 @@ if not os.environ.get("SSL_CERT_FILE"):
         import certifi
 
         os.environ["SSL_CERT_FILE"] = certifi.where()
+        log.info("SSL_CERT_FILE set to %s", certifi.where())
     except ImportError:
-        pass
+        log.warning("certifi not available — SSL may fail")
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -135,6 +140,21 @@ def health():
     return {"status": "ok"}
 
 
+_frontend_log = logging.getLogger("frontend")
+
+
+@app.post("/api/frontend-errors")
+def frontend_errors(body: dict):
+    """Receive error reports from the frontend so they appear in backend logs."""
+    errors = body.get("errors", [])
+    for err in errors[:20]:  # cap at 20 per request
+        source = err.get("source", "unknown")
+        message = err.get("message", "")
+        detail = err.get("detail", "")
+        _frontend_log.error("[%s] %s%s", source, message, f" | {detail}" if detail else "")
+    return {"status": "ok", "received": len(errors)}
+
+
 @app.post("/api/open-url")
 def open_url(body: dict):
     """Open a URL in the system default browser (used by pywebview native app)."""
@@ -175,15 +195,28 @@ def restart():
 @app.on_event("startup")
 def startup():
     """Run database migrations, register connectors, and sync data on startup."""
-    init_db()
-    init_registry()
-    rebuild_from_db()
-    sync_meeting_files()
-    sync_granola()
-    # Start background auto-sync thread
+    t_total = time.time()
+
+    def _step(name, fn):
+        log.info("[startup] %s ...", name)
+        t0 = time.time()
+        try:
+            fn()
+            log.info("[startup] %s OK (%.2fs)", name, time.time() - t0)
+        except Exception:
+            log.exception("[startup] %s FAILED after %.2fs", name, time.time() - t0)
+            raise
+
+    _step("init_db (migrations)", init_db)
+    _step("init_registry (connectors)", init_registry)
+    _step("rebuild_from_db (person matching cache)", rebuild_from_db)
+    _step("sync_meeting_files", sync_meeting_files)
+    _step("sync_granola", sync_granola)
+
     from routers.sync import start_auto_sync
 
-    start_auto_sync()
+    _step("start_auto_sync", start_auto_sync)
+    log.info("[startup] All startup steps completed in %.2fs", time.time() - t_total)
 
 
 @app.on_event("shutdown")
@@ -200,7 +233,19 @@ if is_bundled():
     DIST_DIR = Path(sys._MEIPASS) / "frontend" / "dist"
 else:
     DIST_DIR = Path(__file__).parent.parent / "frontend" / "dist"
+
+log.info("[frontend] DIST_DIR=%s exists=%s", DIST_DIR, DIST_DIR.exists())
 if DIST_DIR.exists():
+    assets_dir = DIST_DIR / "assets"
+    index_file = DIST_DIR / "index.html"
+    log.info("[frontend] assets/ exists=%s, index.html exists=%s", assets_dir.exists(), index_file.exists())
+    if assets_dir.exists():
+        try:
+            asset_files = list(assets_dir.iterdir())
+            log.info("[frontend] %d asset files: %s", len(asset_files), [f.name for f in asset_files[:10]])
+        except Exception as e:
+            log.warning("[frontend] Could not list assets: %s", e)
+
     app.mount("/assets", StaticFiles(directory=DIST_DIR / "assets"), name="assets")
 
     @app.get("/{path:path}")
@@ -214,3 +259,5 @@ if DIST_DIR.exists():
         if file.is_file() and str(file).startswith(str(dist_resolved)):
             return FileResponse(file)
         return FileResponse(DIST_DIR / "index.html")
+else:
+    log.error("[frontend] DIST_DIR does not exist — app will show blank page!")

@@ -94,14 +94,19 @@ def init_registry():
 
     Call this once at app startup.
     """
-    # Each module calls register() at import time
+    import importlib
+    import logging
+
+    log = logging.getLogger("connectors.registry")
+
     _modules = [
         "connectors._registrations",
     ]
-    import importlib
-
     for mod in _modules:
         try:
             importlib.import_module(mod)
-        except ImportError:
-            pass
+            log.info("Imported %s", mod)
+        except ImportError as e:
+            log.error("Failed to import %s: %s", mod, e)
+
+    log.info("Registry initialized with %d connectors: %s", len(REGISTRY), list(REGISTRY.keys()))

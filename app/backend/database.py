@@ -1,3 +1,4 @@
+import logging
 import sqlite3
 import subprocess
 import threading
@@ -6,6 +7,8 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from config import DATABASE_PATH
+
+log = logging.getLogger("database")
 
 # Serialize all writes within this process so only one thread writes at a time.
 # External processes (sqlite3 CLI, agents) contend at the SQLite level where
@@ -96,6 +99,14 @@ def run_migrations():
     backend_dir = get_backend_root()
     alembic_ini = backend_dir / "alembic.ini"
 
+    log.info("Database path: %s", DATABASE_PATH)
+    log.info("Database exists: %s", DATABASE_PATH.exists())
+    if DATABASE_PATH.exists():
+        log.info("Database size: %d bytes", DATABASE_PATH.stat().st_size)
+    log.info("Alembic config: %s (exists=%s)", alembic_ini, alembic_ini.exists())
+    log.info("Backend dir: %s", backend_dir)
+    log.info("Bundled mode: %s", is_bundled())
+
     if not alembic_ini.exists():
         raise FileNotFoundError(f"Alembic config not found at {alembic_ini}")
 
@@ -104,14 +115,23 @@ def run_migrations():
 
     if is_bundled():
         # In PyInstaller bundle, use Alembic Python API (no CLI binary available)
+        alembic_dir = backend_dir / "alembic"
+        log.info("Alembic dir: %s (exists=%s)", alembic_dir, alembic_dir.exists())
+        if alembic_dir.exists():
+            versions_dir = alembic_dir / "versions"
+            if versions_dir.exists():
+                migrations = list(versions_dir.glob("*.py"))
+                log.info("Found %d migration files in %s", len(migrations), versions_dir)
+
         from alembic.config import Config
 
         from alembic import command
 
         cfg = Config(str(alembic_ini))
-        cfg.set_main_option("script_location", str(backend_dir / "alembic"))
+        cfg.set_main_option("script_location", str(alembic_dir))
+        log.info("Running Alembic upgrade to head...")
         command.upgrade(cfg, "head")
-        print("Database migrations completed successfully")
+        log.info("Database migrations completed successfully")
     else:
         # Development mode: use alembic CLI
         import sys
@@ -120,6 +140,7 @@ def run_migrations():
         if not alembic_path.exists():
             alembic_path = "alembic"
 
+        log.info("Running alembic CLI: %s", alembic_path)
         result = subprocess.run(
             [str(alembic_path), "-c", str(alembic_ini), "upgrade", "head"],
             cwd=backend_dir,
@@ -128,14 +149,26 @@ def run_migrations():
         )
 
         if result.returncode != 0:
-            print(f"Migration error: {result.stderr}")
+            log.error("Migration stderr: %s", result.stderr)
             raise RuntimeError(f"Database migration failed: {result.stderr}")
 
-        print("Database migrations completed successfully")
+        if result.stdout:
+            log.info("Migration stdout: %s", result.stdout.strip())
+        log.info("Database migrations completed successfully")
+
+    # Log current schema version
+    try:
+        conn = get_db()
+        row = conn.execute("SELECT version_num FROM alembic_version").fetchone()
+        log.info("Current schema version: %s", row[0] if row else "NONE")
+        conn.close()
+    except Exception as e:
+        log.warning("Could not read schema version: %s", e)
 
 
 def init_db():
     """Initialize database and run all migrations."""
+    log.info("Initializing database...")
     run_migrations()
 
 

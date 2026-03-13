@@ -15,6 +15,31 @@ function notify() {
   listeners.forEach((fn) => fn());
 }
 
+// Buffer errors and flush to backend log periodically
+let pendingErrors: Array<{ source: string; message: string; detail?: string }> =
+  [];
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function flushToBackend() {
+  flushTimer = null;
+  if (pendingErrors.length === 0) return;
+  const batch = pendingErrors;
+  pendingErrors = [];
+  fetch('/api/frontend-errors', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ errors: batch }),
+  }).catch(() => {
+    // Backend not reachable — drop silently
+  });
+}
+
+function scheduleFlush() {
+  if (flushTimer === null) {
+    flushTimer = setTimeout(flushToBackend, 500);
+  }
+}
+
 export function addError(
   source: ErrorEntry['source'],
   message: string,
@@ -29,6 +54,10 @@ export function addError(
   });
   if (entries.length > MAX_ENTRIES) entries.pop();
   notify();
+
+  // Also send to backend log for DMG debugging
+  pendingErrors.push({ source, message, detail });
+  scheduleFlush();
 }
 
 export function getErrors(): readonly ErrorEntry[] {
