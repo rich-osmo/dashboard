@@ -23,12 +23,24 @@ import path from "path";
 import os from "os";
 import fs from "fs";
 
-const AUTH_DIR = path.join(os.homedir(), ".personal-dashboard", "whatsapp-auth");
+const DATA_DIR = process.env.DASHBOARD_DATA_DIR || path.join(os.homedir(), ".personal-dashboard");
+const AUTH_DIR = path.join(DATA_DIR, "whatsapp-auth");
+const WEBHOOK_TOKEN_PATH = path.join(DATA_DIR, ".whatsapp_webhook_token");
 const BACKEND_URL = process.env.DASHBOARD_BACKEND || "http://localhost:8000";
 const PORT = parseInt(process.env.WHATSAPP_PORT || "3001", 10);
 const DEBOUNCE_MS = parseInt(process.env.WHATSAPP_DEBOUNCE_MS || "2000", 10);
 
 const logger = pino({ level: "info" });
+
+/** Read the shared webhook token for backend authentication. */
+function getWebhookToken() {
+  try {
+    return fs.readFileSync(WEBHOOK_TOKEN_PATH, "utf-8").trim();
+  } catch {
+    logger.warn("Webhook token not found at %s — backend will reject requests", WEBHOOK_TOKEN_PATH);
+    return "";
+  }
+}
 
 let sock = null;
 let currentQR = null;
@@ -183,7 +195,10 @@ async function forwardToBackend(sender, text, messageId, timestamp, fromSelf, ex
   try {
     const resp = await fetch(`${BACKEND_URL}/api/whatsapp/incoming`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Webhook-Token": getWebhookToken(),
+      },
       body: JSON.stringify({
         sender,
         text,
