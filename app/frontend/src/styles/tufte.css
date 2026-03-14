@@ -2795,7 +2795,8 @@ a.dashboard-item-link:hover .dashboard-item-title {
   border-top: 1px solid var(--color-border);
 }
 
-.btn-primary {
+.btn-primary,
+a.btn-primary {
   background: var(--color-accent);
   color: #fff;
   border: none;
@@ -2956,6 +2957,36 @@ a.dashboard-item-link:hover .dashboard-item-title {
 .auth-badge-none {
   color: var(--color-text-light);
   border: 1px solid var(--color-border);
+}
+
+.auth-badge-warning {
+  color: #cc8800;
+  border: 1px solid #cc8800;
+}
+
+.auth-setup-needed {
+  margin-top: var(--space-md);
+  padding: var(--space-md);
+  background: #fef9e7;
+  border-left: 3px solid #cc8800;
+}
+
+.auth-setup-label {
+  font-size: var(--text-xs);
+  font-variant: small-caps;
+  letter-spacing: 0.05em;
+  color: #cc8800;
+  margin-bottom: var(--space-xs);
+}
+
+.auth-setup-message {
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  line-height: 1.5;
+}
+
+.status-warning {
+  color: #cc8800;
 }
 
 .auth-error {
@@ -5178,7 +5209,7 @@ span.news-item-title {
   margin: 0 auto var(--space-lg);
 }
 
-.dashboard-empty-state a {
+.dashboard-empty-state a:not(.btn-primary) {
   color: var(--color-accent);
 }
 

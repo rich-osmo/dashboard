@@ -54,6 +54,37 @@ def _update_sync_state(source: str, status: str, error: str | None, items: int, 
         logger.info("Sync [%s]: %s — %d items in %.1fs", source, status, items, elapsed)
 
 
+# Phrases that indicate missing credentials / setup rather than a real sync error
+_SETUP_PHRASES = [
+    "not configured",
+    "not authenticated",
+    "no google credentials",
+    "click authenticate",
+    "add it in settings",
+    "add them in settings",
+    "add google_client_id",
+    "please re-authenticate",
+    "gh auth login",
+    "gh cli not",
+    "scopes have changed",
+]
+
+
+def _is_setup_error(exc: Exception) -> bool:
+    """Return True if the exception indicates missing credentials/setup, not a real sync error."""
+    msg = str(exc).lower()
+    return any(phrase in msg for phrase in _SETUP_PHRASES)
+
+
+def _handle_sync_error(source: str, exc: Exception, elapsed: float):
+    """Store sync error with appropriate status — 'needs_setup' for auth issues, 'error' for real failures."""
+    if _is_setup_error(exc):
+        # Clean user-friendly message without traceback
+        _update_sync_state(source, "needs_setup", str(exc), 0, elapsed=elapsed)
+    else:
+        _update_sync_state(source, "error", traceback.format_exc(), 0, elapsed=elapsed)
+
+
 def sync_meeting_files():
     """Refresh meeting_files table from disk for people that have a dir_path."""
     t0 = time.monotonic()
@@ -118,6 +149,8 @@ sync_markdown = sync_meeting_files
 
 def sync_granola():
     """Parse Granola cache and populate granola_meetings table."""
+    if not _is_enabled("granola"):
+        return
     t0 = time.monotonic()
     try:
         from connectors.granola import sync_granola_meetings
@@ -126,11 +159,13 @@ def sync_granola():
         _update_sync_state("granola", "success", None, count, elapsed=time.monotonic() - t0)
     except ImportError:
         _update_sync_state("granola", "error", "Granola connector not yet implemented", 0)
-    except Exception:
-        _update_sync_state("granola", "error", traceback.format_exc(), 0, elapsed=time.monotonic() - t0)
+    except Exception as e:
+        _handle_sync_error("granola", e, time.monotonic() - t0)
 
 
 def sync_gmail():
+    if not _is_enabled("google"):
+        return
     t0 = time.monotonic()
     try:
         from connectors.gmail import sync_gmail_messages
@@ -139,11 +174,13 @@ def sync_gmail():
         _update_sync_state("gmail", "success", None, count, elapsed=time.monotonic() - t0)
     except ImportError:
         _update_sync_state("gmail", "error", "Gmail connector not yet implemented", 0)
-    except Exception:
-        _update_sync_state("gmail", "error", traceback.format_exc(), 0, elapsed=time.monotonic() - t0)
+    except Exception as e:
+        _handle_sync_error("gmail", e, time.monotonic() - t0)
 
 
 def sync_calendar():
+    if not _is_enabled("google"):
+        return
     t0 = time.monotonic()
     try:
         from connectors.calendar_sync import sync_calendar_events
@@ -152,11 +189,13 @@ def sync_calendar():
         _update_sync_state("calendar", "success", None, count, elapsed=time.monotonic() - t0)
     except ImportError:
         _update_sync_state("calendar", "error", "Calendar connector not yet implemented", 0)
-    except Exception:
-        _update_sync_state("calendar", "error", traceback.format_exc(), 0, elapsed=time.monotonic() - t0)
+    except Exception as e:
+        _handle_sync_error("calendar", e, time.monotonic() - t0)
 
 
 def sync_slack():
+    if not _is_enabled("slack"):
+        return
     t0 = time.monotonic()
     try:
         from connectors.slack import sync_slack_data
@@ -165,11 +204,13 @@ def sync_slack():
         _update_sync_state("slack", "success", None, count, elapsed=time.monotonic() - t0)
     except ImportError:
         _update_sync_state("slack", "error", "Slack connector not yet implemented", 0)
-    except Exception:
-        _update_sync_state("slack", "error", traceback.format_exc(), 0, elapsed=time.monotonic() - t0)
+    except Exception as e:
+        _handle_sync_error("slack", e, time.monotonic() - t0)
 
 
 def sync_notion():
+    if not _is_enabled("notion"):
+        return
     t0 = time.monotonic()
     try:
         from connectors.notion import sync_notion_pages
@@ -178,12 +219,14 @@ def sync_notion():
         _update_sync_state("notion", "success", None, count, elapsed=time.monotonic() - t0)
     except ImportError:
         _update_sync_state("notion", "error", "Notion connector not yet implemented", 0)
-    except Exception:
-        _update_sync_state("notion", "error", traceback.format_exc(), 0, elapsed=time.monotonic() - t0)
+    except Exception as e:
+        _handle_sync_error("notion", e, time.monotonic() - t0)
 
 
 def sync_notion_meetings():
     """Sync meeting notes from Notion (if Notion is the meeting notes provider)."""
+    if not _is_enabled("notion"):
+        return
     t0 = time.monotonic()
     try:
         from connectors.notion_meetings import sync_notion_meeting_notes
@@ -192,11 +235,13 @@ def sync_notion_meetings():
         _update_sync_state("notion_meetings", "success", None, count, elapsed=time.monotonic() - t0)
     except ImportError:
         _update_sync_state("notion_meetings", "error", "Notion meetings connector not available", 0)
-    except Exception:
-        _update_sync_state("notion_meetings", "error", traceback.format_exc(), 0, elapsed=time.monotonic() - t0)
+    except Exception as e:
+        _handle_sync_error("notion_meetings", e, time.monotonic() - t0)
 
 
 def sync_github():
+    if not _is_enabled("github"):
+        return
     t0 = time.monotonic()
     try:
         from connectors.github import sync_github_prs
@@ -205,8 +250,8 @@ def sync_github():
         _update_sync_state("github", "success", None, count, elapsed=time.monotonic() - t0)
     except ImportError:
         _update_sync_state("github", "error", "GitHub connector not available", 0)
-    except Exception:
-        _update_sync_state("github", "error", traceback.format_exc(), 0, elapsed=time.monotonic() - t0)
+    except Exception as e:
+        _handle_sync_error("github", e, time.monotonic() - t0)
 
 
 def _get_last_sync_date(source: str) -> str | None:
@@ -223,6 +268,8 @@ def _get_last_sync_date(source: str) -> str | None:
 
 
 def sync_ramp(org_only: bool = False):
+    if not _is_enabled("ramp"):
+        return
     t0 = time.monotonic()
     try:
         from connectors.ramp import sync_ramp_transactions
@@ -233,11 +280,13 @@ def sync_ramp(org_only: bool = False):
         _update_sync_state("ramp", "success", None, count, elapsed=time.monotonic() - t0)
     except ImportError:
         _update_sync_state("ramp", "error", "Ramp connector not available", 0)
-    except Exception:
-        _update_sync_state("ramp", "error", traceback.format_exc(), 0, elapsed=time.monotonic() - t0)
+    except Exception as e:
+        _handle_sync_error("ramp", e, time.monotonic() - t0)
 
 
 def sync_ramp_vendors():
+    if not _is_enabled("ramp"):
+        return
     t0 = time.monotonic()
     try:
         from connectors.ramp import sync_ramp_vendors as _sync_vendors
@@ -246,11 +295,13 @@ def sync_ramp_vendors():
         _update_sync_state("ramp_vendors", "success", None, count, elapsed=time.monotonic() - t0)
     except ImportError:
         _update_sync_state("ramp_vendors", "error", "Ramp connector not available", 0)
-    except Exception:
-        _update_sync_state("ramp_vendors", "error", traceback.format_exc(), 0, elapsed=time.monotonic() - t0)
+    except Exception as e:
+        _handle_sync_error("ramp_vendors", e, time.monotonic() - t0)
 
 
 def sync_ramp_bills():
+    if not _is_enabled("ramp"):
+        return
     t0 = time.monotonic()
     try:
         from connectors.ramp import seed_projects_from_vendors
@@ -263,11 +314,13 @@ def sync_ramp_bills():
         _update_sync_state("ramp_bills", "success", None, count, elapsed=time.monotonic() - t0)
     except ImportError:
         _update_sync_state("ramp_bills", "error", "Ramp connector not available", 0)
-    except Exception:
-        _update_sync_state("ramp_bills", "error", traceback.format_exc(), 0, elapsed=time.monotonic() - t0)
+    except Exception as e:
+        _handle_sync_error("ramp_bills", e, time.monotonic() - t0)
 
 
 def sync_news():
+    if not _is_enabled("news"):
+        return
     t0 = time.monotonic()
     try:
         from connectors.news import sync_news as _sync_news
@@ -276,11 +329,13 @@ def sync_news():
         _update_sync_state("news", "success", None, count, elapsed=time.monotonic() - t0)
     except ImportError:
         _update_sync_state("news", "error", "News connector not available", 0)
-    except Exception:
-        _update_sync_state("news", "error", traceback.format_exc(), 0, elapsed=time.monotonic() - t0)
+    except Exception as e:
+        _handle_sync_error("news", e, time.monotonic() - t0)
 
 
 def sync_drive():
+    if not _is_enabled("google_drive"):
+        return
     t0 = time.monotonic()
     try:
         from connectors.drive import sync_drive_files
@@ -289,11 +344,13 @@ def sync_drive():
         _update_sync_state("drive", "success", None, count, elapsed=time.monotonic() - t0)
     except ImportError:
         _update_sync_state("drive", "error", "Drive connector not available", 0)
-    except Exception:
-        _update_sync_state("drive", "error", traceback.format_exc(), 0, elapsed=time.monotonic() - t0)
+    except Exception as e:
+        _handle_sync_error("drive", e, time.monotonic() - t0)
 
 
 def sync_sheets():
+    if not _is_enabled("google_drive"):
+        return
     t0 = time.monotonic()
     try:
         from connectors.sheets import sync_sheets_data
@@ -302,11 +359,13 @@ def sync_sheets():
         _update_sync_state("sheets", "success", None, count, elapsed=time.monotonic() - t0)
     except ImportError:
         _update_sync_state("sheets", "error", "Sheets connector not available", 0)
-    except Exception:
-        _update_sync_state("sheets", "error", traceback.format_exc(), 0, elapsed=time.monotonic() - t0)
+    except Exception as e:
+        _handle_sync_error("sheets", e, time.monotonic() - t0)
 
 
 def sync_docs():
+    if not _is_enabled("google_drive"):
+        return
     t0 = time.monotonic()
     try:
         from connectors.docs import sync_docs_data
@@ -315,8 +374,8 @@ def sync_docs():
         _update_sync_state("docs", "success", None, count, elapsed=time.monotonic() - t0)
     except ImportError:
         _update_sync_state("docs", "error", "Docs connector not available", 0)
-    except Exception:
-        _update_sync_state("docs", "error", traceback.format_exc(), 0, elapsed=time.monotonic() - t0)
+    except Exception as e:
+        _handle_sync_error("docs", e, time.monotonic() - t0)
 
 
 def _is_enabled(connector_id: str) -> bool:
@@ -326,7 +385,7 @@ def _is_enabled(connector_id: str) -> bool:
 
         return is_enabled(connector_id)
     except Exception:
-        return True  # Default to enabled if registry not initialized
+        return False
 
 
 def _tracked(source_key: str, fn, *args, **kwargs):

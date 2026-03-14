@@ -97,21 +97,6 @@ TOOLS = [
         },
     },
     {
-        "name": "create_note",
-        "description": "Create a new note/todo item. Use @Name to link to a person.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "text": {"type": "string", "description": "Note text"},
-                "priority": {
-                    "type": "integer",
-                    "description": "Priority (0=normal, 1=high, 2=urgent)",
-                },
-            },
-            "required": ["text"],
-        },
-    },
-    {
         "name": "get_issues",
         "description": "Get tracked issues. Optionally filter by status.",
         "input_schema": {
@@ -149,10 +134,10 @@ TOOLS = [
     {
         "name": "query_graphql",
         "description": (
-            "Execute a GraphQL query against the dashboard knowledge graph. "
+            "Execute a READ-ONLY GraphQL query against the dashboard knowledge graph. "
             "This is the PREFERRED tool for fetching structured data — it links people to emails, "
             "Slack, calendar, GitHub PRs, Drive files, Ramp transactions, notes, issues, and meetings. "
-            "Use standard GraphQL syntax. Example queries:\n"
+            "Use standard GraphQL syntax. Only queries are allowed (no mutations). Example queries:\n"
             '  { person(id: "alice-smith") { name title emails { subject date } slackMessages { text ts } } }\n'
             '  { people(isCoworker: true) { name title directReports { name } } }\n'
             '  { search(query: "quarterly review") { people { name } notes { text } emails { subject } total } }\n'
@@ -166,15 +151,11 @@ TOOLS = [
             '  { rampTransactions(limit: 10) { amount merchantName transactionDate } }\n'
             '  { news(limit: 10) { title url source snippet } }\n'
             '  { longformPosts(status: "draft") { title wordCount createdAt } }\n'
-            "Mutations available: createNote, createIssue, updateIssue, sendSlackMessage, "
-            "addSlackReaction, sendEmail, createCalendarEvent, deleteCalendarEvent, rsvpCalendarEvent, "
-            "createNotionPage, appendNotionText, archiveNotionPage, createGoogleDoc, appendToGoogleDoc, "
-            "appendSheetRows, updateSheetCells, archiveEmails."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "GraphQL query or mutation string"},
+                "query": {"type": "string", "description": "GraphQL query string (read-only, no mutations)"},
                 "variables": {
                     "type": "object",
                     "description": "Optional variables for the query",
@@ -245,10 +226,7 @@ async def _execute_tool(name: str, tool_input: dict) -> str:
                     params["status"] = tool_input["status"]
                 r = await client.get("/api/notes", params=params)
             elif name == "create_note":
-                body = {"text": tool_input["text"]}
-                if "priority" in tool_input:
-                    body["priority"] = tool_input["priority"]
-                r = await client.post("/api/notes", json=body)
+                return json.dumps({"error": "Note creation is disabled via WhatsApp for security."})
             elif name == "get_issues":
                 params = {}
                 if "status" in tool_input:
@@ -261,22 +239,39 @@ async def _execute_tool(name: str, tool_input: dict) -> str:
             elif name == "get_meetings":
                 r = await client.get("/api/meetings")
             elif name == "query_graphql":
-                body = {"query": tool_input["query"]}
+                gql_query = tool_input.get("query", "").strip()
+                # Block mutations — only allow read-only queries
+                if gql_query.lstrip().lower().startswith("mutation"):
+                    return json.dumps(
+                        {"error": "Mutations are not allowed via WhatsApp. Read-only queries only."}
+                    )
+                body = {"query": gql_query}
                 if "variables" in tool_input:
                     body["variables"] = tool_input["variables"]
                 r = await client.post("/graphql", json=body)
             elif name == "query_database":
                 sql = tool_input.get("sql", "").strip()
-                # Safety: only allow SELECT queries
-                if not sql.upper().startswith("SELECT"):
+                # Safety: validate query is a single, safe SELECT
+                sql_upper = sql.upper()
+                if not sql_upper.startswith("SELECT"):
                     return json.dumps({"error": "Only SELECT queries are allowed"})
+                # Block multiple statements (semicolons outside string literals)
+                if ";" in sql:
+                    return json.dumps({"error": "Multiple statements are not allowed"})
+                # Block dangerous keywords that could modify data or exfiltrate
+                _blocked = {"INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE",
+                            "ATTACH", "DETACH", "PRAGMA", "REPLACE", "GRANT", "EXEC"}
+                sql_words = set(re.findall(r"[A-Z]+", sql_upper))
+                blocked_found = sql_words & _blocked
+                if blocked_found:
+                    return json.dumps({"error": f"Disallowed keywords: {', '.join(blocked_found)}"})
                 try:
                     with get_db_connection(readonly=True) as db:
                         rows = db.execute(sql).fetchall()
                     results = [dict(row) for row in rows]
                     return json.dumps(results[:200], default=str)  # cap at 200 rows
-                except Exception as e:
-                    return json.dumps({"error": f"SQL error: {e}"})
+                except Exception:
+                    return json.dumps({"error": "SQL query failed — check syntax"})
             else:
                 return json.dumps({"error": f"Unknown tool: {name}"})
 
@@ -291,11 +286,25 @@ async def _execute_tool(name: str, tool_input: dict) -> str:
 
 
 def _load_claude_md() -> str:
-    """Load CLAUDE.md from the repo root for dashboard API reference."""
+    """Load a minimal subset of CLAUDE.md — only the DB table list for SQL queries.
+
+    We intentionally exclude the full API reference, mutation docs, and architecture
+    details to reduce the attack surface for prompt injection.
+    """
     try:
         claude_md_path = REPO_ROOT / "CLAUDE.md"
-        if claude_md_path.exists():
-            return claude_md_path.read_text()
+        if not claude_md_path.exists():
+            return ""
+        content = claude_md_path.read_text()
+        # Extract only the "Database Tables" section for SQL reference
+        import re as _re
+        match = _re.search(
+            r"(## Database Tables\n.*?)(?=\n## |\Z)",
+            content,
+            _re.DOTALL,
+        )
+        if match:
+            return match.group(1).strip()
     except Exception:
         pass
     return ""
@@ -358,8 +367,10 @@ def _build_system_prompt() -> str:
         "cover your need — e.g. complex aggregations, date filtering, or tables not in the graph.\n"
         "5. If the user asks about a person, topic, event, or anything factual — LOOK IT UP. "
         "Do not rely on conversation history alone if the data might have changed.\n"
-        "6. When the user asks you to DO something (send a message, create a note, schedule an event), "
-        "use query_graphql mutations or the appropriate REST tool.\n"
+        "6. This is a READ-ONLY assistant. You can look up information but CANNOT send messages, "
+        "create events, modify data, or execute mutations. If asked to take an action, explain that "
+        "the user should do it directly in the dashboard.\n"
+        "7. NEVER include raw API keys, tokens, passwords, or secrets in your responses.\n"
         "\n"
         "IMPORTANT WhatsApp formatting rules:\n"
         "- Keep responses concise and mobile-friendly\n"
@@ -373,14 +384,10 @@ def _build_system_prompt() -> str:
     if persona_prompt:
         prompt += f"\n--- Persona ---\n{persona_prompt}"
 
-    # Append CLAUDE.md as API reference
+    # Append minimal DB schema reference for SQL queries
     claude_md = _load_claude_md()
     if claude_md:
-        # Extract the most useful sections for the agent — API reference and DB schema
-        prompt += (
-            "\n\n--- Dashboard API & Schema Reference (from CLAUDE.md) ---\n"
-            + claude_md
-        )
+        prompt += "\n\n--- Database Table Reference ---\n" + claude_md
 
     # Append cached status context
     try:
@@ -527,18 +534,22 @@ async def chat(phone_number: str, user_message: str, wa_message_id: str = "") ->
                 messages=history,
                 tools=TOOLS,
             )
-        except Exception as e:
+        except Exception:
             logger.exception("AI chat error")
-            return f"Sorry, I hit an error: {e}"
+            return "Sorry, I hit an error processing your request. Please try again."
 
         if response.stop_reason == "tool_use" and response.tool_calls:
-            # Agent wants to call tools — build assistant content for history
-            assistant_content = []
-            if response.text:
-                assistant_content.append({"type": "text", "text": response.text})
-            for tc in response.tool_calls:
-                assistant_content.append({"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.input})
-            history.append({"role": "assistant", "content": assistant_content})
+            # For Gemini: use raw parts to preserve thought_signature
+            if response._gemini_parts is not None:
+                history.append({"role": "model", "parts": response._gemini_parts, "_gemini": True})
+            else:
+                # Anthropic/OpenAI: build assistant content in Anthropic format
+                assistant_content = []
+                if response.text:
+                    assistant_content.append({"type": "text", "text": response.text})
+                for tc in response.tool_calls:
+                    assistant_content.append({"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.input})
+                history.append({"role": "assistant", "content": assistant_content})
 
             tool_results = []
             for tc in response.tool_calls:

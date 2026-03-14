@@ -12,12 +12,14 @@ register(
         name="Google",
         description="Gmail, Calendar, Drive, Sheets",
         category="oauth",
-        secret_keys=[],
+        secret_keys=["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
         help_steps=[
-            "Click 'Authenticate' below to sign in with Google",
-            "Grant access to Gmail, Calendar, and Drive (read-only)",
-            "Your token is stored locally and never sent anywhere else",
+            "Go to console.cloud.google.com and create a project (or use existing)",
+            "Enable Gmail, Calendar, Drive, and Sheets APIs",
+            "Go to 'Credentials' → create 'OAuth 2.0 Client ID' (Desktop app type)",
+            "Copy the Client ID and Client Secret below, then click Authenticate",
         ],
+        help_url="https://console.cloud.google.com/apis/credentials",
         sync_sources=["gmail", "calendar"],
         default_enabled=True,
         sync_fn=None,  # Google has separate gmail/calendar sync fns

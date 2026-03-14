@@ -4,17 +4,16 @@ import json
 import logging
 import os
 import stat
-from pathlib import Path
 
 from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 
-from config import GCLOUD_CREDENTIALS_PATH, get_google_scopes
+from config import DATA_DIR, GCLOUD_CREDENTIALS_PATH, get_google_scopes
 
 logger = logging.getLogger(__name__)
 
-TOKEN_PATH = Path(__file__).parent.parent / ".google_token.json"
+TOKEN_PATH = DATA_DIR / ".google_token.json"
 _cached_creds: Credentials | None = None
 
 
@@ -32,6 +31,52 @@ def _get_quota_project_id() -> str | None:
     if GCLOUD_CREDENTIALS_PATH.exists():
         with open(GCLOUD_CREDENTIALS_PATH) as f:
             return json.load(f).get("quota_project_id")
+    return None
+
+
+def _get_client_credentials() -> tuple[str, str] | None:
+    """Resolve Google OAuth client credentials from config, file, or gcloud ADC.
+
+    Returns (client_id, client_secret) or None if no credentials found.
+    Priority:
+      1. GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET in config.json secrets
+      2. google_client_secret.json file in DATA_DIR
+      3. gcloud ADC at ~/.config/gcloud/application_default_credentials.json
+    """
+    from app_config import get_secret
+
+    # 1. Config secrets (primary path for DMG users)
+    client_id = get_secret("GOOGLE_CLIENT_ID")
+    client_secret = get_secret("GOOGLE_CLIENT_SECRET")
+    if client_id and client_secret:
+        return (client_id, client_secret)
+
+    # 2. Bundled client_secret.json file in data directory
+    client_secret_file = DATA_DIR / "google_client_secret.json"
+    if client_secret_file.exists():
+        try:
+            with open(client_secret_file) as f:
+                data = json.load(f)
+            app_data = data.get("installed") or data.get("web") or {}
+            cid = app_data.get("client_id")
+            csec = app_data.get("client_secret")
+            if cid and csec:
+                return (cid, csec)
+        except (json.JSONDecodeError, OSError):
+            logger.warning("Failed to read google_client_secret.json")
+
+    # 3. gcloud ADC fallback (developer path)
+    if GCLOUD_CREDENTIALS_PATH.exists():
+        try:
+            with open(GCLOUD_CREDENTIALS_PATH) as f:
+                cred_data = json.load(f)
+            cid = cred_data.get("client_id")
+            csec = cred_data.get("client_secret")
+            if cid and csec:
+                return (cid, csec)
+        except (json.JSONDecodeError, OSError):
+            logger.warning("Failed to read gcloud ADC")
+
     return None
 
 
@@ -66,56 +111,59 @@ def get_google_credentials() -> Credentials:
         if _cached_creds and _cached_creds.valid:
             return _cached_creds
 
-    # Fall back to ADC
-    if not GCLOUD_CREDENTIALS_PATH.exists():
-        raise FileNotFoundError("No Google credentials found. Run the OAuth flow at /api/auth/google")
+    # Fall back to ADC refresh_token (only works if gcloud ADC has one)
+    if GCLOUD_CREDENTIALS_PATH.exists():
+        with open(GCLOUD_CREDENTIALS_PATH) as f:
+            cred_data = json.load(f)
 
-    with open(GCLOUD_CREDENTIALS_PATH) as f:
-        cred_data = json.load(f)
+        if cred_data.get("refresh_token"):
+            try:
+                _cached_creds = Credentials(
+                    token=None,
+                    refresh_token=cred_data.get("refresh_token"),
+                    client_id=cred_data.get("client_id"),
+                    client_secret=cred_data.get("client_secret"),
+                    token_uri="https://oauth2.googleapis.com/token",
+                    scopes=scopes,
+                    quota_project_id=cred_data.get("quota_project_id"),
+                )
+                _cached_creds.refresh(Request())
+                TOKEN_PATH.write_text(_cached_creds.to_json())
+                os.chmod(TOKEN_PATH, stat.S_IRUSR | stat.S_IWUSR)
+                return _cached_creds
+            except (RefreshError, Exception) as e:
+                logger.warning("ADC token refresh failed: %s", e)
+                _cached_creds = None
 
-    try:
-        _cached_creds = Credentials(
-            token=None,
-            refresh_token=cred_data.get("refresh_token"),
-            client_id=cred_data.get("client_id"),
-            client_secret=cred_data.get("client_secret"),
-            token_uri="https://oauth2.googleapis.com/token",
-            scopes=scopes,
-            quota_project_id=cred_data.get("quota_project_id"),
-        )
-        _cached_creds.refresh(Request())
-        # Save for future use
-        TOKEN_PATH.write_text(_cached_creds.to_json())
-        os.chmod(TOKEN_PATH, stat.S_IRUSR | stat.S_IWUSR)
-        return _cached_creds
-    except RefreshError:
-        scope_str = ",".join(scopes)
-        raise RuntimeError(
-            f"Google scopes changed — re-authenticate. Run:\n"
-            f"  gcloud auth application-default login --scopes='{scope_str}'"
-        )
-    except Exception:
-        scope_str = ",".join(scopes)
-        raise RuntimeError(
-            f"ADC token refresh failed. Run:\n  gcloud auth application-default login --scopes='{scope_str}'"
-        )
+    raise FileNotFoundError(
+        "No Google credentials found. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET "
+        "in Settings, then click Authenticate."
+    )
 
 
 def run_oauth_flow() -> Credentials:
-    """Run browser-based OAuth flow using ADC client credentials."""
+    """Run browser-based OAuth flow using resolved client credentials."""
+    import subprocess
+    import webbrowser
+
     from google_auth_oauthlib.flow import InstalledAppFlow
 
-    if not GCLOUD_CREDENTIALS_PATH.exists():
-        raise FileNotFoundError("No gcloud credentials found")
+    logger.info("Starting Google OAuth flow...")
 
-    with open(GCLOUD_CREDENTIALS_PATH) as f:
-        cred_data = json.load(f)
+    creds_pair = _get_client_credentials()
+    if not creds_pair:
+        raise FileNotFoundError(
+            "No Google OAuth client credentials found. "
+            "Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in Settings."
+        )
 
+    client_id, client_secret = creds_pair
     scopes = get_google_scopes()
+    logger.info("OAuth scopes: %s", scopes)
     client_config = {
         "installed": {
-            "client_id": cred_data["client_id"],
-            "client_secret": cred_data["client_secret"],
+            "client_id": client_id,
+            "client_secret": client_secret,
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
             "redirect_uris": ["http://localhost:8080"],
@@ -123,10 +171,31 @@ def run_oauth_flow() -> Credentials:
     }
 
     flow = InstalledAppFlow.from_client_config(client_config, scopes)
-    creds = flow.run_local_server(port=8080, open_browser=True)
+
+    # In pywebview (DMG app), webbrowser.open() can silently fail because
+    # PyInstaller bundles may not find the system browser correctly.
+    # Monkey-patch webbrowser.open to use macOS `open` command which always works.
+    _orig_open = webbrowser.open
+
+    def _open_via_macos(url, *args, **kwargs):
+        logger.info("Opening OAuth URL in system browser")
+        try:
+            subprocess.Popen(["open", url])
+            return True
+        except Exception:
+            logger.warning("macOS `open` failed, falling back to webbrowser.open")
+            return _orig_open(url, *args, **kwargs)
+
+    webbrowser.open = _open_via_macos
+    try:
+        logger.info("Waiting for OAuth callback on port 8080...")
+        creds = flow.run_local_server(port=8080, open_browser=True)
+    finally:
+        webbrowser.open = _orig_open
 
     global _cached_creds
     _cached_creds = creds
     TOKEN_PATH.write_text(creds.to_json())
     os.chmod(TOKEN_PATH, stat.S_IRUSR | stat.S_IWUSR)
+    logger.info("OAuth flow completed, token saved to %s", TOKEN_PATH)
     return creds

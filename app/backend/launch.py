@@ -29,10 +29,24 @@ def setup_logging():
     sys.stderr = open(LOG_FILE, "a", buffering=1)
 
 
-def start_server():
-    log.info("Starting uvicorn server on 127.0.0.1:8000")
+def find_free_port(start=8000, max_attempts=100):
+    """Find a free port starting from `start`, incrementing until one is available."""
+    import socket
+
+    for port in range(start, start + max_attempts):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            if sock.connect_ex(("127.0.0.1", port)) != 0:
+                return port
+        finally:
+            sock.close()
+    return start  # fallback
+
+
+def start_server(port):
+    log.info("Starting uvicorn server on 127.0.0.1:%d", port)
     try:
-        uvicorn.run("main:app", host="127.0.0.1", port=8000, log_level="info")
+        uvicorn.run("main:app", host="127.0.0.1", port=port, log_level="info")
     except BaseException as e:
         # Catch BaseException to also capture SystemExit (raised by sys.exit())
         log.error("Uvicorn server crashed: %s: %s", type(e).__name__, e)
@@ -78,21 +92,20 @@ if __name__ == "__main__":
         except Exception as e:
             log.warning("Could not list frontend dist: %s", e)
 
-    # Check if port 8000 is already in use
-    import socket
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    port_in_use = sock.connect_ex(("127.0.0.1", 8000)) == 0
-    sock.close()
-    if port_in_use:
-        log.warning("Port 8000 is already in use! Server may fail to start.")
+    # Find a free port (default 8000, auto-increment if in use)
+    port = find_free_port(8000)
+    if port != 8000:
+        log.info("Port 8000 is in use — using port %d instead", port)
+    else:
+        log.info("Using default port 8000")
 
     # Start FastAPI in a background thread
-    log.info("Launching server thread...")
+    log.info("Launching server thread on port %d...", port)
     server_error = threading.Event()
 
     def _server_wrapper():
         try:
-            start_server()
+            start_server(port)
         except BaseException as e:
             log.error("Server thread died: %s: %s", type(e).__name__, e)
             server_error.set()
@@ -109,12 +122,13 @@ if __name__ == "__main__":
 
     log.info("Waiting for server health check...")
     server_ready = False
+    health_url = f"http://127.0.0.1:{port}/api/health"
     for attempt in range(30):
         if server_error.is_set():
             log.error("Server thread crashed before becoming ready")
             break
         try:
-            urllib.request.urlopen("http://127.0.0.1:8000/api/health", timeout=2)
+            urllib.request.urlopen(health_url, timeout=2)
             log.info("Server ready after %d attempts (%.1fs)", attempt + 1, attempt * 0.2)
             server_ready = True
             break
@@ -127,11 +141,12 @@ if __name__ == "__main__":
         log.error("Server did not become ready after 30 attempts (6s). Opening window anyway.")
 
     # Open native window
-    log.info("Creating pywebview window (1280x860)...")
+    app_url = f"http://127.0.0.1:{port}"
+    log.info("Creating pywebview window (1280x860) at %s...", app_url)
     try:
         window = webview.create_window(
             "Personal Dashboard",
-            "http://127.0.0.1:8000",
+            app_url,
             width=1280,
             height=860,
             min_size=(800, 600),
