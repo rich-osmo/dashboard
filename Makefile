@@ -1,11 +1,33 @@
-.PHONY: start stop restart backend frontend status logs app build dev run test test-headed test-setup lint fmt dmg release db-migrate db-upgrade db-downgrade db-current db-history db-revision whatsapp whatsapp-stop
+.PHONY: start stop restart backend frontend status logs app build dev run test test-headed test-setup lint fmt dmg release db-migrate db-upgrade db-downgrade db-current db-history db-revision whatsapp whatsapp-stop setup
 
 BACKEND_DIR = app/backend
 FRONTEND_DIR = app/frontend
 
+# --- Setup ---
+
+setup: venv
+	@cd $(FRONTEND_DIR) && npm install
+	@echo "Setup complete. Run 'make dev' to start."
+
+PYTHON := $(shell command -v python3.13 || command -v python3.12 || command -v python3.11 || command -v python3)
+
+venv:
+	@if [ ! -d $(BACKEND_DIR)/venv ]; then \
+		if $(PYTHON) -c 'import sys; exit(0 if sys.version_info >= (3,11) else 1)' 2>/dev/null; then \
+			echo "Creating Python virtual environment using $$($(PYTHON) --version)..."; \
+			$(PYTHON) -m venv $(BACKEND_DIR)/venv; \
+			cd $(BACKEND_DIR) && source venv/bin/activate && pip install -q -r requirements.txt; \
+			echo "Virtual environment created and dependencies installed."; \
+		else \
+			echo "Error: Python 3.11+ required. Found: $$($(PYTHON) --version 2>&1)"; \
+			echo "Install with: brew install python@3.13"; \
+			exit 1; \
+		fi \
+	fi
+
 # --- Native app ---
 
-start:
+start: venv
 	@echo "Stopping any existing servers..."
 	@lsof -ti:8000 | xargs kill -9 2>/dev/null || true
 	@lsof -ti:5173 | xargs kill -9 2>/dev/null || true
@@ -40,7 +62,7 @@ build:
 
 # --- Dev mode (hot reload) ---
 
-dev: backend frontend whatsapp
+dev: venv backend frontend whatsapp
 	@echo "Dev mode running at http://localhost:5173"
 
 backend:
@@ -51,6 +73,7 @@ backend:
 
 frontend:
 	@lsof -ti:5173 | xargs kill -9 2>/dev/null || true
+	@if [ ! -d $(FRONTEND_DIR)/node_modules ]; then echo "Installing frontend dependencies..."; cd $(FRONTEND_DIR) && npm install; fi
 	@cd $(FRONTEND_DIR) && npx vite --port 5173 > /tmp/dashboard-frontend.log 2>&1 &
 	@sleep 2
 	@curl -sf http://localhost:5173 > /dev/null && echo "Frontend running on :5173" || echo "Frontend failed to start — check /tmp/dashboard-frontend.log"

@@ -185,6 +185,38 @@ def _check_ramp() -> dict:
     return result
 
 
+def _check_microsoft() -> dict:
+    """Check Microsoft 365 auth status by validating credentials."""
+    from connectors.microsoft_auth import TOKEN_PATH as MS_TOKEN_PATH
+    from connectors.microsoft_auth import _get_client_credentials
+
+    result = {"configured": False, "connected": False, "error": None, "detail": None}
+
+    has_creds = _get_client_credentials() is not None
+    if not has_creds and not MS_TOKEN_PATH.exists():
+        result["detail"] = (
+            "No Microsoft credentials found. Add MICROSOFT_CLIENT_ID and "
+            "MICROSOFT_CLIENT_SECRET in Settings."
+        )
+        return result
+
+    result["configured"] = has_creds or MS_TOKEN_PATH.exists()
+    try:
+        from connectors.microsoft_auth import get_microsoft_token
+
+        token = get_microsoft_token()
+        if token:
+            result["connected"] = True
+            result["detail"] = "Authenticated via Microsoft OAuth"
+    except FileNotFoundError as e:
+        result["error"] = str(e)
+    except Exception as e:
+        logger.exception("Microsoft auth check failed")
+        result["error"] = str(e)
+
+    return result
+
+
 def _check_granola() -> dict:
     """Check Granola MCP auth status by inspecting stored tokens."""
     from connectors.mcp_client import _has_any_tokens, _has_valid_tokens
@@ -232,6 +264,8 @@ def _get_sync_states() -> dict:
 _AUTH_TO_SYNC = {
     "google": ["gmail", "calendar"],
     "google_drive": ["drive", "sheets", "docs"],
+    "microsoft": ["outlook_email", "outlook_calendar"],
+    "microsoft_drive": ["onedrive"],
     "slack": ["slack"],
     "notion": ["notion", "notion_meetings"],
     "granola": ["granola"],
@@ -248,12 +282,16 @@ _SECRET_TO_SYNC = {
     "RAMP_CLIENT_SECRET": ["ramp", "ramp_vendors", "ramp_bills"],
     "GOOGLE_CLIENT_ID": ["gmail", "calendar", "drive", "sheets", "docs"],
     "GOOGLE_CLIENT_SECRET": ["gmail", "calendar", "drive", "sheets", "docs"],
+    "MICROSOFT_CLIENT_ID": ["outlook_email", "outlook_calendar", "onedrive"],
+    "MICROSOFT_CLIENT_SECRET": ["outlook_email", "outlook_calendar", "onedrive"],
 }
 
 # Map connector IDs to sync_state sources
 _CONNECTOR_TO_SYNC = {
     "google": ["gmail", "calendar"],
     "google_drive": ["drive", "sheets", "docs"],
+    "microsoft": ["outlook_email", "outlook_calendar"],
+    "microsoft_drive": ["onedrive"],
     "slack": ["slack"],
     "notion": ["notion", "notion_meetings"],
     "granola": ["granola"],
@@ -284,6 +322,8 @@ def auth_status():
     services = {
         "google": _check_google(),
         "google_drive": _check_google(),
+        "microsoft": _check_microsoft(),
+        "microsoft_drive": _check_microsoft(),
         "slack": _check_slack(),
         "notion": _check_notion(),
         "granola": _check_granola(),
@@ -358,6 +398,32 @@ def google_revoke():
     return {"status": "no_token"}
 
 
+@router.post("/microsoft")
+def microsoft_auth():
+    """Trigger browser-based Microsoft OAuth flow."""
+    logger.info("POST /api/auth/microsoft — starting OAuth flow")
+    try:
+        from connectors.microsoft_auth import run_oauth_flow
+
+        run_oauth_flow()
+        _clear_sync_errors(_AUTH_TO_SYNC.get("microsoft", []))
+        _clear_sync_errors(_AUTH_TO_SYNC.get("microsoft_drive", []))
+        logger.info("POST /api/auth/microsoft — OAuth flow completed successfully")
+        return {"status": "authenticated"}
+    except Exception as e:
+        logger.exception("Microsoft OAuth flow failed: %s", e)
+        return {"status": "error", "error": f"OAuth flow failed: {e}"}
+
+
+@router.post("/microsoft/revoke")
+def microsoft_revoke():
+    """Remove stored Microsoft token to force re-authentication."""
+    from connectors.microsoft_auth import revoke_token
+
+    revoke_token()
+    return {"status": "revoked"}
+
+
 @router.post("/granola/connect")
 def granola_connect():
     """Initiate Granola OAuth flow (opens browser for user consent)."""
@@ -378,6 +444,8 @@ def test_connection(service: str):
     checkers = {
         "google": _check_google,
         "google_drive": _check_google,
+        "microsoft": _check_microsoft,
+        "microsoft_drive": _check_microsoft,
         "slack": _check_slack,
         "notion": _check_notion,
         "granola": _check_granola,
@@ -512,6 +580,43 @@ def disable_connector(connector_id: str):
         return {"error": f"Unknown connector: {connector_id}"}
     set_connector_enabled(connector_id, False)
     return {"status": "ok", "connector": connector_id, "enabled": False}
+
+
+# --- Email/Calendar provider switch ---
+
+
+@router.post("/email-calendar-provider/switch")
+def switch_email_calendar_provider(body: dict):
+    """Switch between Google and Microsoft for email/calendar.
+
+    Clears synced email/calendar data so the new provider starts fresh.
+    """
+    provider = body.get("provider", "")
+    if provider not in ("google", "microsoft"):
+        return {"error": "provider must be 'google' or 'microsoft'"}
+
+    from app_config import get_email_calendar_provider, update_profile
+
+    old_provider = get_email_calendar_provider()
+    if old_provider == provider:
+        return {"status": "ok", "provider": provider, "changed": False}
+
+    # Update profile setting
+    update_profile({"email_calendar_provider": provider})
+
+    # Clear synced email/calendar data so new provider starts fresh
+    with get_write_db() as db:
+        db.execute("DELETE FROM emails")
+        db.execute("DELETE FROM calendar_events")
+        db.execute("DELETE FROM cached_email_priorities")
+        # Clear sync state for both providers
+        db.execute(
+            "DELETE FROM sync_state WHERE source IN ('gmail', 'calendar', 'outlook_email', 'outlook_calendar')"
+        )
+        db.commit()
+
+    logger.info("Switched email/calendar provider from %s to %s, cleared data", old_provider, provider)
+    return {"status": "ok", "provider": provider, "changed": True}
 
 
 # --- Google access mode ---

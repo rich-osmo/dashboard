@@ -24,6 +24,9 @@ ALLOWED_SECRET_KEYS = frozenset(
         "OPENAI_API_KEY",
         "GOOGLE_CLIENT_ID",
         "GOOGLE_CLIENT_SECRET",
+        "MICROSOFT_CLIENT_ID",
+        "MICROSOFT_CLIENT_SECRET",
+        "MICROSOFT_TENANT_ID",
     }
 )
 
@@ -161,6 +164,11 @@ def set_google_access_mode(mode: str):
     if mode not in ("readonly", "readwrite"):
         raise ValueError(f"Invalid mode: {mode!r}")
     save_config({"connectors": {"google": {"access_mode": mode}}})
+
+
+def get_email_calendar_provider() -> str:
+    """Return 'google' or 'microsoft'. Defaults to 'google' for backward compat."""
+    return get_profile().get("email_calendar_provider") or "google"
 
 
 def get_prompt_context() -> str:

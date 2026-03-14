@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import {
   useAuthStatus,
   useGoogleAuth,
+  useMicrosoftAuth,
+  useMicrosoftRevoke,
+  useSwitchEmailCalendarProvider,
   useGranolaAuth,
   useGoogleRevoke,
   useTestConnection,
@@ -192,8 +195,10 @@ function ServiceCard({
   status: ServiceAuthStatus | undefined;
 }) {
   const googleAuth = useGoogleAuth();
+  const microsoftAuth = useMicrosoftAuth();
   const granolaAuth = useGranolaAuth();
   const googleRevoke = useGoogleRevoke();
+  const microsoftRevoke = useMicrosoftRevoke();
   const testConnection = useTestConnection();
   const toggle = useToggleConnector();
   const setAccessMode = useSetGoogleAccessMode();
@@ -364,10 +369,10 @@ function ServiceCard({
             ) && (
               <button
                 className="auth-action-btn"
-                onClick={() => connector.id === 'granola' ? granolaAuth.mutate() : googleAuth.mutate()}
-                disabled={connector.id === 'granola' ? granolaAuth.isPending : googleAuth.isPending}
+                onClick={() => connector.id === 'granola' ? granolaAuth.mutate() : connector.id === 'microsoft' ? microsoftAuth.mutate() : googleAuth.mutate()}
+                disabled={connector.id === 'granola' ? granolaAuth.isPending : connector.id === 'microsoft' ? microsoftAuth.isPending : googleAuth.isPending}
               >
-                {(connector.id === 'granola' ? granolaAuth.isPending : googleAuth.isPending) ? 'Authenticating...' : 'Authenticate'}
+                {(connector.id === 'granola' ? granolaAuth.isPending : connector.id === 'microsoft' ? microsoftAuth.isPending : googleAuth.isPending) ? 'Authenticating...' : 'Authenticate'}
               </button>
             )}
             {connector.category === 'oauth' && !status?.connected &&
@@ -383,7 +388,16 @@ function ServiceCard({
                 {granolaAuth.isPending ? 'Authenticating...' : 'Reauthenticate'}
               </button>
             )}
-            {connector.category === 'oauth' && status?.connected && connector.id !== 'granola' && (
+            {connector.category === 'oauth' && status?.connected && connector.id === 'microsoft' && (
+              <button
+                className="auth-action-btn auth-action-btn-secondary"
+                onClick={() => microsoftRevoke.mutate()}
+                disabled={microsoftRevoke.isPending}
+              >
+                {microsoftRevoke.isPending ? 'Revoking...' : 'Disconnect'}
+              </button>
+            )}
+            {connector.category === 'oauth' && status?.connected && connector.id !== 'granola' && connector.id !== 'microsoft' && (
               <button
                 className="auth-action-btn auth-action-btn-secondary"
                 onClick={() => googleRevoke.mutate()}
@@ -428,10 +442,10 @@ function ServiceCard({
             </ol>
           )}
 
-          {(googleAuth.data?.error || granolaAuth.data?.error) && (
+          {(googleAuth.data?.error || microsoftAuth.data?.error || granolaAuth.data?.error) && (
             <div className="auth-error" style={{ marginTop: 'var(--space-md)' }}>
               <div className="auth-error-label">OAuth Error</div>
-              <div className="auth-error-message">{googleAuth.data?.error || granolaAuth.data?.error}</div>
+              <div className="auth-error-message">{googleAuth.data?.error || microsoftAuth.data?.error || granolaAuth.data?.error}</div>
             </div>
           )}
         </>
@@ -742,9 +756,11 @@ function SyncStatusSummary() {
 
   const syncSourceToConnector: Record<string, string> = {
     gmail: 'google', calendar: 'google',
+    outlook_email: 'microsoft', outlook_calendar: 'microsoft',
     slack: 'slack', notion: 'notion', github: 'github',
     granola: 'granola', ramp: 'ramp', ramp_vendors: 'ramp', ramp_bills: 'ramp',
     drive: 'google_drive', sheets: 'google_drive', docs: 'google_drive',
+    onedrive: 'microsoft_drive',
     news: 'news',
   };
 
@@ -829,9 +845,54 @@ function AutoSyncSetting() {
   );
 }
 
+function EmailCalendarProviderPicker() {
+  const { data: profile } = useProfile();
+  const switchProvider = useSwitchEmailCalendarProvider();
+  const toggle = useToggleConnector();
+
+  const current = profile?.email_calendar_provider || 'google';
+
+  const handleChange = (provider: 'google' | 'microsoft') => {
+    if (provider === current) return;
+    switchProvider.mutate(provider, {
+      onSuccess: (data) => {
+        if (data.changed) {
+          // Enable the selected connector
+          toggle.mutate({ id: provider, enabled: true });
+        }
+      },
+    });
+  };
+
+  return (
+    <div style={{ marginBottom: 'var(--space-md)' }}>
+      <div style={{ display: 'flex', gap: 'var(--space-sm)', marginBottom: 'var(--space-xs)' }}>
+        <button
+          className={`filter-btn ${current === 'google' ? 'active' : ''}`}
+          onClick={() => handleChange('google')}
+          disabled={switchProvider.isPending}
+        >
+          Google (Gmail)
+        </button>
+        <button
+          className={`filter-btn ${current === 'microsoft' ? 'active' : ''}`}
+          onClick={() => handleChange('microsoft')}
+          disabled={switchProvider.isPending}
+        >
+          Microsoft 365 (Outlook)
+        </button>
+      </div>
+      <div style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)' }}>
+        Active email &amp; calendar provider: <strong>{current === 'microsoft' ? 'Microsoft 365' : 'Google'}</strong>
+      </div>
+    </div>
+  );
+}
+
 const CONNECTOR_GROUPS: { label: string; description: string; ids: string[] }[] = [
-  { label: 'Google Services', description: 'Gmail, Calendar, and Drive. Authenticate once to enable all Google services.', ids: ['google', 'google_drive'] },
-  { label: 'Communication', description: 'Search and sync messages from your team tools.', ids: ['slack', 'notion'] },
+  { label: 'Email & Calendar', description: 'Choose Google or Microsoft 365 for email and calendar.', ids: ['google', 'microsoft'] },
+  { label: 'Documents', description: 'Files, docs, and spreadsheets from Google Drive or OneDrive.', ids: ['google_drive', 'microsoft_drive', 'notion'] },
+  { label: 'Communication', description: 'Search and sync messages from your team tools.', ids: ['slack'] },
   { label: 'Meeting Transcripts', description: 'Import meeting notes and transcripts.', ids: ['granola'] },
   { label: 'Development', description: 'Pull requests, issues, and AI-assisted coding.', ids: ['github', 'claude_code'] },
   { label: 'Finance', description: 'Transactions, bills, and vendor data from Ramp.', ids: ['ramp'] },
@@ -840,84 +901,156 @@ const CONNECTOR_GROUPS: { label: string; description: string; ids: string[] }[] 
 
 const AI_CONNECTOR_IDS = new Set(['gemini', 'anthropic', 'openai']);
 
+type SettingsTab = 'connections' | 'ai' | 'sync' | 'profile' | 'advanced';
+
 export function SettingsPage() {
   const { data: authData, isLoading: authLoading, refetch } = useAuthStatus();
   const { data: connectors, isLoading: connectorsLoading } = useConnectors();
   const { data: setupStatus } = useSetupStatus();
   const triggerSync = useSync();
+  const [activeTab, setActiveTab] = useState<SettingsTab>('connections');
+  const [activeGroup, setActiveGroup] = useState<string | null>(null);
 
   if (authLoading || connectorsLoading) return <p className="empty-state">Loading...</p>;
 
   const authMap = (authData ?? {}) as Record<string, ServiceAuthStatus>;
   const allConnectors = connectors ?? [];
 
+  const visibleGroups = CONNECTOR_GROUPS.filter(
+    group => allConnectors.some(c => group.ids.includes(c.id))
+  );
+
   return (
     <div>
       <h1>Settings</h1>
 
-      <ProfileSection />
+      <div className="tab-bar">
+        <button
+          className={`tab ${activeTab === 'connections' ? 'active' : ''}`}
+          onClick={() => setActiveTab('connections')}
+        >
+          Connections
+        </button>
+        <button
+          className={`tab ${activeTab === 'ai' ? 'active' : ''}`}
+          onClick={() => setActiveTab('ai')}
+        >
+          AI
+        </button>
+        <button
+          className={`tab ${activeTab === 'sync' ? 'active' : ''}`}
+          onClick={() => setActiveTab('sync')}
+        >
+          Sync
+        </button>
+        <button
+          className={`tab ${activeTab === 'profile' ? 'active' : ''}`}
+          onClick={() => setActiveTab('profile')}
+        >
+          Profile
+        </button>
+        <button
+          className={`tab ${activeTab === 'advanced' ? 'active' : ''}`}
+          onClick={() => setActiveTab('advanced')}
+        >
+          Advanced
+        </button>
+      </div>
 
-      {/* Grouped connector sections */}
-      {CONNECTOR_GROUPS.map((group) => {
-        const groupConnectors = allConnectors.filter(c => group.ids.includes(c.id));
-        if (groupConnectors.length === 0) return null;
-        return (
-          <section key={group.label} className="settings-group">
-            <h3>{group.label}</h3>
-            <p className="settings-group-desc">{group.description}</p>
-            <div className="auth-grid">
-              {groupConnectors.map((connector) => (
-                <ServiceCard
-                  key={connector.id}
-                  connector={connector}
-                  status={authMap[connector.id]}
-                />
-              ))}
-            </div>
-          </section>
-        );
-      })}
+      {activeTab === 'connections' && (
+        <>
+          {/* Group filter nav */}
+          <div className="settings-group-nav">
+            <span className="settings-group-nav-label">Show:</span>
+            <button
+              className={`settings-group-nav-btn ${activeGroup === null ? 'active' : ''}`}
+              onClick={() => setActiveGroup(null)}
+            >
+              All
+            </button>
+            {visibleGroups.map((group) => (
+              <button
+                key={group.label}
+                className={`settings-group-nav-btn ${activeGroup === group.label ? 'active' : ''}`}
+                onClick={() => setActiveGroup(activeGroup === group.label ? null : group.label)}
+              >
+                {group.label}
+              </button>
+            ))}
+          </div>
 
-      {/* Meeting notes provider picker — after Communication & Granola are visible */}
-      <MeetingNotesSection />
-
-      {/* AI provider + API key — separate section */}
-      <AISection connectors={allConnectors.filter(c => AI_CONNECTOR_IDS.has(c.id))} authMap={authMap} />
-
-      {/* Sync status + actions */}
-      <section className="settings-group">
-        <h3>Sync</h3>
-        <SyncStatusSummary />
-        <AutoSyncSetting />
-        <div className="auth-page-actions">
-          <button className="sync-button" onClick={() => refetch()}>
-            Re-check All
-          </button>
-          <button
-            className={`sync-button ${triggerSync.isPending ? 'syncing' : ''}`}
-            onClick={() => {
-              triggerSync.mutate();
-              setTimeout(() => refetch(), 5000);
-            }}
-            disabled={triggerSync.isPending}
-          >
-            <span className={`sync-icon ${triggerSync.isPending ? 'syncing' : ''}`}>
-              &#x21bb;
-            </span>
-            {triggerSync.isPending ? 'Syncing...' : 'Sync All Sources'}
-          </button>
-        </div>
-      </section>
-
-      {setupStatus && (
-        <DataSection setupStatus={setupStatus} />
+          {/* Grouped connector sections */}
+          {visibleGroups
+            .filter(group => activeGroup === null || activeGroup === group.label)
+            .map((group) => {
+              const groupConnectors = allConnectors.filter(c => group.ids.includes(c.id));
+              const isEmailCalGroup = group.ids.includes('google') && group.ids.includes('microsoft');
+              const isMeetingGroup = group.label === 'Meeting Transcripts';
+              return (
+                <section key={group.label} className="settings-group">
+                  <h3>{group.label}</h3>
+                  <p className="settings-group-desc">{group.description}</p>
+                  {isEmailCalGroup && <EmailCalendarProviderPicker />}
+                  {isMeetingGroup && <MeetingNotesSection />}
+                  <div className="auth-grid">
+                    {groupConnectors.map((connector) => (
+                      <ServiceCard
+                        key={connector.id}
+                        connector={connector}
+                        status={authMap[connector.id]}
+                      />
+                    ))}
+                  </div>
+                </section>
+              );
+            })}
+        </>
       )}
 
-      <ResetSection />
+      {activeTab === 'ai' && (
+        <AISection connectors={allConnectors.filter(c => AI_CONNECTOR_IDS.has(c.id))} authMap={authMap} />
+      )}
 
-      <section className="settings-group" style={{ borderTop: '1px solid var(--color-border)', paddingTop: 'var(--space-md)', marginTop: 'var(--space-xl)' }}>
-        <a href="/help" style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-light)' }}>? Help &amp; feature guide</a>
-      </section>
+      {activeTab === 'sync' && (
+        <section className="settings-group">
+          <SyncStatusSummary />
+          <AutoSyncSetting />
+          <div className="auth-page-actions">
+            <button className="sync-button" onClick={() => refetch()}>
+              Re-check All
+            </button>
+            <button
+              className={`sync-button ${triggerSync.isPending ? 'syncing' : ''}`}
+              onClick={() => {
+                triggerSync.mutate();
+                setTimeout(() => refetch(), 5000);
+              }}
+              disabled={triggerSync.isPending}
+            >
+              <span className={`sync-icon ${triggerSync.isPending ? 'syncing' : ''}`}>
+                &#x21bb;
+              </span>
+              {triggerSync.isPending ? 'Syncing...' : 'Sync All Sources'}
+            </button>
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'profile' && (
+        <ProfileSection />
+      )}
+
+      {activeTab === 'advanced' && (
+        <>
+          {setupStatus && (
+            <DataSection setupStatus={setupStatus} />
+          )}
+          <ResetSection />
+          <section className="settings-group" style={{ borderTop: '1px solid var(--color-border)', paddingTop: 'var(--space-md)', marginTop: 'var(--space-xl)' }}>
+            <a href="/help" style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-light)' }}>? Help &amp; feature guide</a>
+          </section>
+        </>
+      )}
     </div>
   );
 }

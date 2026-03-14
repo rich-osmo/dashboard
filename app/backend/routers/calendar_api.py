@@ -15,7 +15,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/calendar", tags=["calendar"])
 
 
+def _is_microsoft() -> bool:
+    """Check if Microsoft is the active calendar provider."""
+    from app_config import get_email_calendar_provider
+
+    return get_email_calendar_provider() == "microsoft"
+
+
 def _get_service():
+    if _is_microsoft():
+        raise HTTPException(status_code=503, detail="Google is not the active calendar provider")
     try:
         creds = get_google_credentials()
         return build("calendar", "v3", credentials=creds)
@@ -64,6 +73,11 @@ def search_calendar(
     max_results: int = Query(50, ge=1, le=250),
 ):
     """Search calendar events by text and/or date range."""
+    if _is_microsoft():
+        from connectors.outlook_calendar import search_outlook_events
+
+        results = search_outlook_events(q or "", max_results)
+        return {"query": q, "time_range": {"start": start, "end": end}, "count": len(results), "events": results}
     service = _get_service()
 
     now = datetime.now(timezone.utc)
@@ -94,6 +108,51 @@ def search_calendar(
 @router.get("/event/{event_id}")
 def get_event(event_id: str):
     """Get a single calendar event with full details."""
+    if _is_microsoft():
+        import httpx
+
+        from connectors.microsoft_auth import get_microsoft_token
+
+        token = get_microsoft_token()
+        resp = httpx.get(
+            f"https://graph.microsoft.com/v1.0/me/events/{event_id}",
+            headers={"Authorization": f"Bearer {token}", "Prefer": 'outlook.timezone="UTC"'},
+            timeout=30,
+        )
+        if resp.status_code == 404:
+            raise HTTPException(status_code=404, detail="Event not found")
+        resp.raise_for_status()
+        event = resp.json()
+        attendees = [
+            {
+                "email": a.get("emailAddress", {}).get("address", ""),
+                "name": a.get("emailAddress", {}).get("name", ""),
+                "response": a.get("status", {}).get("response", ""),
+                "self": False,
+            }
+            for a in event.get("attendees", [])
+        ]
+        start_dt = event.get("start", {})
+        end_dt = event.get("end", {})
+        return {
+            "id": event["id"],
+            "summary": event.get("subject", "(No title)"),
+            "description": event.get("bodyPreview", ""),
+            "location": (
+                event.get("location", {}).get("displayName", "")
+                if isinstance(event.get("location"), dict)
+                else ""
+            ),
+            "start_time": start_dt.get("dateTime", ""),
+            "end_time": end_dt.get("dateTime", ""),
+            "all_day": event.get("isAllDay", False),
+            "attendees": attendees,
+            "organizer_email": event.get("organizer", {}).get("emailAddress", {}).get("address", ""),
+            "html_link": event.get("webLink", ""),
+            "status": "confirmed",
+            "recurring_event_id": None,
+            "conference_data": [],
+        }
     service = _get_service()
     try:
         event = service.events().get(calendarId="primary", eventId=event_id).execute()
@@ -110,6 +169,18 @@ def get_event(event_id: str):
 @router.post("/events")
 def create_event(event: CalendarEventCreate):
     """Create a new calendar event."""
+    if _is_microsoft():
+        from connectors.outlook_calendar import create_outlook_event
+
+        result = create_outlook_event(
+            summary=event.summary,
+            start_time=event.start_time,
+            end_time=event.end_time,
+            description=event.description or "",
+            location=event.location or "",
+            attendees=event.attendees,
+        )
+        return {"id": result.get("id"), "summary": result.get("subject", "")}
     service = _get_service()
     body: dict = {"summary": event.summary}
 
@@ -146,6 +217,22 @@ def create_event(event: CalendarEventCreate):
 @router.patch("/events/{event_id}")
 def update_event(event_id: str, event: CalendarEventUpdate):
     """Update an existing calendar event (partial update)."""
+    if _is_microsoft():
+        from connectors.outlook_calendar import update_outlook_event
+
+        updates = {}
+        if event.summary is not None:
+            updates["summary"] = event.summary
+        if event.description is not None:
+            updates["description"] = event.description
+        if event.location is not None:
+            updates["location"] = event.location
+        if event.start_time is not None:
+            updates["start_time"] = event.start_time
+        if event.end_time is not None:
+            updates["end_time"] = event.end_time
+        result = update_outlook_event(event_id, updates)
+        return {"id": result.get("id"), "summary": result.get("subject", "")}
     service = _get_service()
     body: dict = {}
     if event.summary is not None:
@@ -181,6 +268,11 @@ def update_event(event_id: str, event: CalendarEventUpdate):
 @router.delete("/events/{event_id}")
 def delete_event(event_id: str, send_notifications: bool = Query(True)):
     """Delete a calendar event."""
+    if _is_microsoft():
+        from connectors.outlook_calendar import delete_outlook_event
+
+        delete_outlook_event(event_id)
+        return {"ok": True, "event_id": event_id}
     service = _get_service()
     try:
         service.events().delete(
@@ -197,6 +289,11 @@ def delete_event(event_id: str, send_notifications: bool = Query(True)):
 @router.post("/events/{event_id}/rsvp")
 def rsvp_event(event_id: str, rsvp: CalendarRSVP):
     """RSVP to a calendar event (accepted/declined/tentative)."""
+    if _is_microsoft():
+        from connectors.outlook_calendar import rsvp_outlook_event
+
+        rsvp_outlook_event(event_id, rsvp.response)
+        return {"ok": True, "event_id": event_id, "response": rsvp.response}
     service = _get_service()
     try:
         event = service.events().get(calendarId="primary", eventId=event_id).execute()

@@ -46,6 +46,50 @@ register(
     )
 )
 
+# --- Microsoft 365 (Outlook Email + Calendar) ---
+register(
+    ConnectorInfo(
+        id="microsoft",
+        name="Microsoft 365",
+        description="Outlook Email and Calendar via Microsoft Graph",
+        category="oauth",
+        secret_keys=["MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET"],
+        help_steps=[
+            "Go to portal.azure.com → Azure Active Directory → App registrations",
+            "Create a new registration (set redirect URI to "
+            "http://localhost:8080, type 'Mobile and desktop applications')",
+            "Under 'Certificates & secrets', create a new client secret",
+            "Under 'API permissions', add Microsoft Graph: Mail.ReadWrite, Calendars.ReadWrite, User.Read",
+            "Copy the Application (client) ID and Client Secret below, then click Authenticate",
+        ],
+        help_url="https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps",
+        sync_sources=["outlook_email", "outlook_calendar"],
+        default_enabled=False,
+        sync_fn=None,  # Has separate email/calendar sync fns
+        check_fn="routers.auth._check_microsoft",
+    )
+)
+
+# --- Microsoft OneDrive (Word, Excel, PowerPoint, files) ---
+register(
+    ConnectorInfo(
+        id="microsoft_drive",
+        name="Microsoft OneDrive",
+        description="OneDrive files, Word, Excel, and PowerPoint",
+        category="oauth",
+        secret_keys=[],
+        help_steps=[
+            "Connect Microsoft 365 first — same OAuth token",
+            "Enable this connector to sync recent OneDrive activity",
+            "Requires Files.Read permission (you may need to re-authenticate)",
+        ],
+        sync_sources=["onedrive"],
+        default_enabled=False,
+        sync_fn="connectors.onedrive.sync_onedrive_files",
+        check_fn="routers.auth._check_microsoft",
+    )
+)
+
 # --- Slack ---
 register(
     ConnectorInfo(

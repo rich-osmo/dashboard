@@ -67,6 +67,8 @@ _SETUP_PHRASES = [
     "gh auth login",
     "gh cli not",
     "scopes have changed",
+    "no microsoft credentials",
+    "add microsoft_client_id",
 ]
 
 
@@ -191,6 +193,32 @@ def sync_calendar():
         _update_sync_state("calendar", "error", "Calendar connector not yet implemented", 0)
     except Exception as e:
         _handle_sync_error("calendar", e, time.monotonic() - t0)
+
+
+def sync_outlook_email():
+    if not _is_enabled("microsoft"):
+        return
+    t0 = time.monotonic()
+    try:
+        from connectors.outlook_email import sync_outlook_messages
+
+        count = sync_outlook_messages()
+        _update_sync_state("outlook_email", "success", None, count, elapsed=time.monotonic() - t0)
+    except Exception as e:
+        _handle_sync_error("outlook_email", e, time.monotonic() - t0)
+
+
+def sync_outlook_calendar():
+    if not _is_enabled("microsoft"):
+        return
+    t0 = time.monotonic()
+    try:
+        from connectors.outlook_calendar import sync_outlook_events
+
+        count = sync_outlook_events()
+        _update_sync_state("outlook_calendar", "success", None, count, elapsed=time.monotonic() - t0)
+    except Exception as e:
+        _handle_sync_error("outlook_calendar", e, time.monotonic() - t0)
 
 
 def sync_slack():
@@ -378,6 +406,21 @@ def sync_docs():
         _handle_sync_error("docs", e, time.monotonic() - t0)
 
 
+def sync_onedrive():
+    if not _is_enabled("microsoft_drive"):
+        return
+    t0 = time.monotonic()
+    try:
+        from connectors.onedrive import sync_onedrive_files
+
+        count = sync_onedrive_files()
+        _update_sync_state("onedrive", "success", None, count, elapsed=time.monotonic() - t0)
+    except ImportError:
+        _update_sync_state("onedrive", "error", "OneDrive connector not available", 0)
+    except Exception as e:
+        _handle_sync_error("onedrive", e, time.monotonic() - t0)
+
+
 def _is_enabled(connector_id: str) -> bool:
     """Check if a connector is enabled in the registry."""
     try:
@@ -426,7 +469,13 @@ def _run_full_sync():
 
         # Group 2: External APIs — independent of each other, run in parallel
         external: list[tuple[str, callable]] = []
-        if _is_enabled("google"):
+        # Email/Calendar: dispatch based on active provider
+        from app_config import get_email_calendar_provider
+
+        email_cal_provider = get_email_calendar_provider()
+        if email_cal_provider == "microsoft" and _is_enabled("microsoft"):
+            external.extend([("outlook_email", sync_outlook_email), ("outlook_calendar", sync_outlook_calendar)])
+        elif _is_enabled("google"):
             external.extend([("gmail", sync_gmail), ("calendar", sync_calendar)])
         if _is_enabled("slack"):
             external.append(("slack", sync_slack))
@@ -443,6 +492,8 @@ def _run_full_sync():
             external.extend([("ramp", sync_ramp), ("ramp_vendors", sync_ramp_vendors)])
         if _is_enabled("google_drive"):
             external.append(("drive", sync_drive))
+        if _is_enabled("microsoft_drive"):
+            external.append(("onedrive", sync_onedrive))
         _run_group(external)
 
         if _sync_cancel.is_set():
@@ -625,6 +676,8 @@ def trigger_source_sync(source: str, background_tasks: BackgroundTasks, org_only
         "granola": sync_granola,
         "gmail": sync_gmail,
         "calendar": sync_calendar,
+        "outlook_email": sync_outlook_email,
+        "outlook_calendar": sync_outlook_calendar,
         "slack": sync_slack,
         "notion": sync_notion,
         "github": sync_github,
@@ -634,6 +687,7 @@ def trigger_source_sync(source: str, background_tasks: BackgroundTasks, org_only
         "drive": sync_drive,
         "sheets": sync_sheets,
         "docs": sync_docs,
+        "onedrive": sync_onedrive,
         "notion_meetings": sync_notion_meetings,
     }
     fn = sync_map.get(source)

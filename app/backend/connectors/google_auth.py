@@ -35,13 +35,17 @@ def _get_quota_project_id() -> str | None:
 
 
 def _get_client_credentials() -> tuple[str, str] | None:
-    """Resolve Google OAuth client credentials from config, file, or gcloud ADC.
+    """Resolve Google OAuth client credentials from config or file.
 
     Returns (client_id, client_secret) or None if no credentials found.
     Priority:
       1. GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET in config.json secrets
       2. google_client_secret.json file in DATA_DIR
-      3. gcloud ADC at ~/.config/gcloud/application_default_credentials.json
+
+    Note: gcloud ADC credentials are intentionally excluded here. The gcloud
+    CLI's own client_id/client_secret cannot be used for new OAuth flows
+    (Google rejects them with 'invalid_client'). ADC token refresh is handled
+    separately in get_google_credentials().
     """
     from app_config import get_secret
 
@@ -64,18 +68,6 @@ def _get_client_credentials() -> tuple[str, str] | None:
                 return (cid, csec)
         except (json.JSONDecodeError, OSError):
             logger.warning("Failed to read google_client_secret.json")
-
-    # 3. gcloud ADC fallback (developer path)
-    if GCLOUD_CREDENTIALS_PATH.exists():
-        try:
-            with open(GCLOUD_CREDENTIALS_PATH) as f:
-                cred_data = json.load(f)
-            cid = cred_data.get("client_id")
-            csec = cred_data.get("client_secret")
-            if cid and csec:
-                return (cid, csec)
-        except (json.JSONDecodeError, OSError):
-            logger.warning("Failed to read gcloud ADC")
 
     return None
 

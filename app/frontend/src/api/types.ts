@@ -367,6 +367,7 @@ export interface ServiceAuthStatus {
 export interface AuthStatus {
   google: ServiceAuthStatus;
   google_drive: ServiceAuthStatus;
+  microsoft: ServiceAuthStatus;
   slack: ServiceAuthStatus;
   notion: ServiceAuthStatus;
   granola: ServiceAuthStatus;
@@ -898,6 +899,7 @@ export interface UserProfile {
   github_repo?: string;
   skip_domains?: string[];
   news_topics?: string[];
+  email_calendar_provider?: 'google' | 'microsoft';
   meeting_notes_provider?: string;
   notion_meeting_notes_database_id?: string;
   whatsapp_phone?: string;

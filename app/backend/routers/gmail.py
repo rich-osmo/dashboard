@@ -21,7 +21,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/gmail", tags=["gmail"])
 
 
+def _is_microsoft() -> bool:
+    """Check if Microsoft is the active email provider."""
+    from app_config import get_email_calendar_provider
+
+    return get_email_calendar_provider() == "microsoft"
+
+
 def _get_service():
+    if _is_microsoft():
+        raise HTTPException(status_code=503, detail="Google is not the active email provider")
     try:
         creds = get_google_credentials()
         return build("gmail", "v1", credentials=creds)
@@ -117,10 +126,15 @@ def get_all_emails(
 
 @router.get("/search")
 def search_gmail(
-    q: str = Query(..., description="Gmail search query (e.g. 'from:alice subject:review')"),
+    q: str = Query(..., description="Email search query (e.g. 'from:alice subject:review')"),
     max_results: int = Query(20, ge=1, le=100),
 ):
-    """Search Gmail using native query syntax."""
+    """Search email using native query syntax. Dispatches to Google or Microsoft."""
+    if _is_microsoft():
+        from connectors.outlook_email import search_outlook_messages
+
+        results = search_outlook_messages(q, max_results)
+        return {"query": q, "count": len(results), "messages": results}
     service = _get_service()
     try:
         results = service.users().messages().list(userId="me", q=q, maxResults=max_results).execute()
@@ -155,7 +169,12 @@ def search_gmail(
 
 @router.get("/thread/{thread_id}")
 def get_thread(thread_id: str):
-    """Get a full email thread with message bodies."""
+    """Get a full email thread with message bodies. For Outlook, thread_id is conversationId."""
+    if _is_microsoft():
+        from connectors.outlook_email import get_outlook_thread
+
+        messages = get_outlook_thread(thread_id)
+        return {"thread_id": thread_id, "message_count": len(messages), "messages": messages}
     service = _get_service()
     try:
         thread = service.users().threads().get(userId="me", id=thread_id, format="full").execute()
@@ -173,6 +192,35 @@ def get_thread(thread_id: str):
 @router.get("/message/{message_id}")
 def get_message(message_id: str):
     """Get a single email message with full body text."""
+    if _is_microsoft():
+        import httpx
+
+        from connectors.microsoft_auth import get_microsoft_token
+
+        token = get_microsoft_token()
+        resp = httpx.get(
+            f"https://graph.microsoft.com/v1.0/me/messages/{message_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            params={"$select": "id,conversationId,subject,body,from,toRecipients,receivedDateTime,isRead"},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        msg = resp.json()
+        from_info = msg.get("from", {}).get("emailAddress", {})
+        body = msg.get("body", {})
+        return {
+            "id": msg["id"],
+            "thread_id": msg.get("conversationId", ""),
+            "subject": msg.get("subject", ""),
+            "from_name": from_info.get("name", ""),
+            "from_email": from_info.get("address", ""),
+            "to": ", ".join(r.get("emailAddress", {}).get("address", "") for r in msg.get("toRecipients", [])),
+            "date": msg.get("receivedDateTime", ""),
+            "snippet": msg.get("bodyPreview", ""),
+            "labels": [],
+            "is_unread": not msg.get("isRead", True),
+            "body": body.get("content", ""),
+        }
     service = _get_service()
     try:
         msg = service.users().messages().get(userId="me", id=message_id, format="full").execute()
@@ -214,6 +262,16 @@ def _build_mime_message(
 @router.post("/send")
 def send_email(email: GmailSend):
     """Send an email (new or reply)."""
+    if _is_microsoft():
+        from connectors.outlook_email import send_outlook_email
+
+        result = send_outlook_email(
+            to=email.to,
+            subject=email.subject,
+            body=email.body,
+            reply_to_message_id=email.reply_to_message_id,
+        )
+        return result
     service = _get_service()
     raw = _build_mime_message(
         email.to,
@@ -243,6 +301,11 @@ def send_email(email: GmailSend):
 @router.get("/drafts")
 def list_drafts(max_results: int = Query(20, ge=1, le=100)):
     """List email drafts."""
+    if _is_microsoft():
+        from connectors.outlook_email import get_outlook_drafts
+
+        drafts = get_outlook_drafts()
+        return {"count": len(drafts), "drafts": drafts}
     service = _get_service()
     try:
         results = service.users().drafts().list(userId="me", maxResults=max_results).execute()
@@ -279,6 +342,11 @@ def list_drafts(max_results: int = Query(20, ge=1, le=100)):
 @router.post("/drafts")
 def create_draft(draft: GmailDraftCreate):
     """Create an email draft."""
+    if _is_microsoft():
+        from connectors.outlook_email import create_outlook_draft
+
+        result = create_outlook_draft(to=draft.to, subject=draft.subject, body=draft.body)
+        return {"id": result.get("id", ""), "message_id": result.get("id", "")}
     service = _get_service()
     raw = _build_mime_message(draft.to, draft.subject, draft.body, cc=draft.cc, bcc=draft.bcc)
 
@@ -336,7 +404,12 @@ def delete_draft(draft_id: str):
 
 @router.post("/archive")
 def archive_messages(body: GmailArchive):
-    """Archive messages by removing INBOX label."""
+    """Archive messages."""
+    if _is_microsoft():
+        from connectors.outlook_email import archive_outlook_messages
+
+        count = archive_outlook_messages(body.message_ids)
+        return {"results": [{"id": mid, "ok": True} for mid in body.message_ids[:count]]}
     service = _get_service()
     results = []
     for msg_id in body.message_ids:
@@ -355,6 +428,11 @@ def archive_messages(body: GmailArchive):
 @router.post("/trash")
 def trash_messages(body: GmailTrash):
     """Move messages to trash."""
+    if _is_microsoft():
+        from connectors.outlook_email import trash_outlook_messages
+
+        count = trash_outlook_messages(body.message_ids)
+        return {"results": [{"id": mid, "ok": True} for mid in body.message_ids[:count]]}
     service = _get_service()
     results = []
     for msg_id in body.message_ids:

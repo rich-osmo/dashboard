@@ -328,6 +328,36 @@ export function useGoogleAuth() {
   });
 }
 
+export function useMicrosoftAuth() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ status: string; error?: string }>('/auth/microsoft'),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['auth-status'] }),
+  });
+}
+
+export function useMicrosoftRevoke() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ status: string }>('/auth/microsoft/revoke'),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['auth-status'] }),
+  });
+}
+
+export function useSwitchEmailCalendarProvider() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (provider: 'google' | 'microsoft') =>
+      api.post<{ status: string; provider: string; changed: boolean }>('/auth/email-calendar-provider/switch', { provider }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['auth-status'] });
+      qc.invalidateQueries({ queryKey: ['profile'] });
+      qc.invalidateQueries({ queryKey: ['sync-status'] });
+      qc.invalidateQueries({ queryKey: ['connectors'] });
+    },
+  });
+}
+
 export function useGranolaAuth() {
   const qc = useQueryClient();
   return useMutation({
