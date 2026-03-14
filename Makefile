@@ -185,23 +185,30 @@ whatsapp-stop:
 #   make ship merge=1            # also merge the PR after creating it
 
 ship:
-	@if [ -z "$$(git status --porcelain)" ]; then echo "Nothing to commit."; exit 1; fi
 	@BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
 	if [ "$$BRANCH" = "main" ] || [ "$$BRANCH" = "master" ]; then \
 		echo "Error: You're on $$BRANCH. Create a feature branch first."; \
 		exit 1; \
 	fi; \
-	echo "=== Staging & Committing ==="; \
-	git add -A; \
-	if [ -n "$(m)" ]; then \
-		MSG="$(m)"; \
+	if [ -n "$$(git status --porcelain)" ]; then \
+		echo "=== Staging & Committing ==="; \
+		git add -A; \
+		if [ -n "$(m)" ]; then \
+			MSG="$(m)"; \
+		else \
+			echo "Generating commit message with Claude..."; \
+			MSG=$$(git diff --cached | claude -p "Write a short, conventional commit message (one line, no quotes) for this diff. Just output the message, nothing else." 2>/dev/null); \
+			MSG="$${MSG:-Update $$BRANCH}"; \
+			echo "Commit: $$MSG"; \
+		fi; \
+		git commit -m "$$MSG"; \
+	elif [ -z "$$(git log main..HEAD --oneline 2>/dev/null)" ]; then \
+		echo "Nothing to commit and no commits ahead of main."; \
+		exit 1; \
 	else \
-		echo "Generating commit message with Claude..."; \
-		MSG=$$(git diff --cached | claude -p "Write a short, conventional commit message (one line, no quotes) for this diff. Just output the message, nothing else." 2>/dev/null); \
-		MSG="$${MSG:-Update $$BRANCH}"; \
-		echo "Commit: $$MSG"; \
+		echo "=== No uncommitted changes, using existing commits ==="; \
+		MSG=$$(git log -1 --pretty=format:"%s"); \
 	fi; \
-	git commit -m "$$MSG"; \
 	echo "=== Pushing $$BRANCH ==="; \
 	git push -u origin "$$BRANCH"; \
 	echo "=== Creating PR ==="; \
