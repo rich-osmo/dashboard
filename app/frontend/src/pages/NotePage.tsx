@@ -237,44 +237,30 @@ export function NotePage() {
     return items;
   }, [notes, issues]);
 
-  // Keyboard navigation for thoughts section
-  const { containerRef: thoughtsContainerRef } = useFocusNavigation({
+  // Unified keyboard navigation across thoughts + all notes
+  const thoughtCount = thoughts.length;
+  const { containerRef: unifiedContainerRef } = useFocusNavigation({
     selector: '.dashboard-item-row',
     onDismiss: (i) => {
-      if (thoughts[i]) {
-        updateNote.mutate({
-          id: thoughts[i].id,
-          status: thoughts[i].status === 'done' ? 'open' : 'done',
-        });
-      }
-    },
-  });
-
-  // Keyboard navigation for all notes section
-  const { containerRef: allNotesContainerRef } = useFocusNavigation({
-    selector: '.dashboard-item-row',
-    onDismiss: (i) => {
-      if (allItems[i]) {
-        if (allItems[i].kind === 'note') {
-          updateNote.mutate({
-            id: allItems[i].item.id,
-            status: allItems[i].item.status === 'done' ? 'open' : 'done',
-          });
-        } else if (allItems[i].kind === 'issue') {
-          updateIssue.mutate({
-            id: allItems[i].item.id,
-            status: allItems[i].item.status === 'done' ? 'open' : 'done',
-          });
+      if (i < thoughtCount) {
+        const note = thoughts[i];
+        if (note) updateNote.mutate({ id: note.id, status: note.status === 'done' ? 'open' : 'done' });
+      } else {
+        const entry = allItems[i - thoughtCount];
+        if (!entry) return;
+        if (entry.kind === 'note') {
+          updateNote.mutate({ id: entry.item.id, status: entry.item.status === 'done' ? 'open' : 'done' });
+        } else {
+          updateIssue.mutate({ id: entry.item.id, status: entry.item.status === 'done' ? 'open' : 'done' });
         }
       }
     },
     onCreateIssue: (i) => {
-      if (allItems[i] && allItems[i].kind === 'note') {
-        const note = allItems[i].item as Note;
-        createIssue.mutate({
-          title: note.text.slice(0, 120),
-          person_ids: note.people?.map((p) => p.id) || [],
-        });
+      const note = i < thoughtCount
+        ? thoughts[i]
+        : allItems[i - thoughtCount]?.kind === 'note' ? allItems[i - thoughtCount].item as Note : null;
+      if (note) {
+        createIssue.mutate({ title: note.text.slice(0, 120), person_ids: note.people?.map((p) => p.id) || [] });
       }
     },
   });
@@ -344,11 +330,12 @@ export function NotePage() {
 
       {isLoading && <p className="empty-state">Loading...</p>}
 
+      <div ref={unifiedContainerRef}>
       {/* Thoughts section */}
       {thoughts.length > 0 && (
         <div style={{ marginBottom: 'var(--space-xl)' }}>
           <h2>Thoughts</h2>
-          <div ref={thoughtsContainerRef}>
+          <div>
             {thoughts.map((note) => (
               <NoteItem
                 key={note.id}
@@ -370,7 +357,7 @@ export function NotePage() {
       {/* All notes + issues */}
       <div>
         <h2>All Notes</h2>
-        <div ref={allNotesContainerRef}>
+        <div>
         {allItems.map((entry) => {
           if (entry.kind === 'note') {
             const note = entry.item;
@@ -445,6 +432,7 @@ export function NotePage() {
           </p>
         )}
         </div>
+      </div>
       </div>
       {allItems.length > 0 && (
         <KeyboardHints hints={['j/k navigate', 'Enter open', 'd toggle done', 'i create issue']} />

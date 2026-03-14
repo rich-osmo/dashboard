@@ -28,18 +28,24 @@ function StatusBadge({ status }: { status: ServiceAuthStatus }) {
   const hasSyncErrors = Object.values(status.sync || {}).some(
     (s) => s.last_sync_status === 'error'
   );
+  const hasSetupNeeded = Object.values(status.sync || {}).some(
+    (s) => s.last_sync_status === 'needs_setup'
+  );
   const hasSyncSuccess = Object.values(status.sync || {}).some(
     (s) => s.last_sync_status === 'success'
   );
 
-  if (hasSyncSuccess && !hasSyncErrors) {
+  if (hasSyncSuccess && !hasSyncErrors && !hasSetupNeeded) {
     return <span className="auth-badge auth-badge-connected">connected</span>;
   }
-  if (hasSyncSuccess && hasSyncErrors) {
+  if (hasSyncSuccess && (hasSyncErrors || hasSetupNeeded)) {
     return <span className="auth-badge auth-badge-configured">partial</span>;
   }
   if (status.connected) {
     return <span className="auth-badge auth-badge-connected">authenticated</span>;
+  }
+  if (hasSetupNeeded && !hasSyncErrors) {
+    return <span className="auth-badge auth-badge-warning">needs setup</span>;
   }
   if (hasSyncErrors) {
     return <span className="auth-badge auth-badge-error">sync error</span>;
@@ -55,6 +61,17 @@ function StatusBadge({ status }: { status: ServiceAuthStatus }) {
 
 function SyncErrorBlock({ name, info }: { name: string; info: SyncSourceInfo }) {
   const [showDetail, setShowDetail] = useState(false);
+
+  if (info.last_sync_status === 'needs_setup') {
+    return (
+      <div className="auth-setup-needed">
+        <div className="auth-setup-label">Setup needed — {name}</div>
+        <div className="auth-setup-message">
+          {info.last_error || 'Authentication required. Complete setup above to enable syncing.'}
+        </div>
+      </div>
+    );
+  }
 
   if (info.last_sync_status !== 'error') return null;
 
@@ -343,6 +360,8 @@ function ServiceCard({
 
           <div className="auth-card-actions">
             {connector.category === 'oauth' && !status?.connected && (
+              connector.secret_keys.length === 0 || connector.secret_keys.every(k => secretsData[k]?.configured)
+            ) && (
               <button
                 className="auth-action-btn"
                 onClick={() => connector.id === 'granola' ? granolaAuth.mutate() : googleAuth.mutate()}
@@ -350,6 +369,10 @@ function ServiceCard({
               >
                 {(connector.id === 'granola' ? granolaAuth.isPending : googleAuth.isPending) ? 'Authenticating...' : 'Authenticate'}
               </button>
+            )}
+            {connector.category === 'oauth' && !status?.connected &&
+              connector.secret_keys.length > 0 && !connector.secret_keys.every(k => secretsData[k]?.configured) && (
+              <div className="auth-detail-info">Enter credentials above, then click Authenticate.</div>
             )}
             {connector.category === 'oauth' && status?.connected && connector.id === 'granola' && (
               <button
@@ -737,6 +760,7 @@ function SyncStatusSummary() {
 
   const successCount = entries.filter(([, info]) => info.last_sync_status === 'success').length;
   const errorCount = entries.filter(([, info]) => info.last_sync_status === 'error').length;
+  const setupCount = entries.filter(([, info]) => info.last_sync_status === 'needs_setup').length;
 
   const lastSyncedAt = entries
     .map(([, info]) => info.last_sync_at)
@@ -752,6 +776,8 @@ function SyncStatusSummary() {
             <svg className="sync-icon syncing" width="10" height="10" viewBox="0 0 14 14" style={{ display: 'inline-block' }}>
               <circle cx="7" cy="7" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="20 14" />
             </svg>
+          ) : info.last_sync_status === 'needs_setup' ? (
+            <span className="status-warning" title="Needs setup">&#9888;</span>
           ) : (
             <span className={info.last_sync_status === 'success' ? 'status-ok' : 'status-error'}>
               {info.last_sync_status === 'success' ? '\u2713' : '\u2717'}
@@ -761,6 +787,7 @@ function SyncStatusSummary() {
       ))}
       <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-light)', marginTop: 'var(--space-xs)' }}>
         {successCount}/{entries.length} synced
+        {setupCount > 0 && <span className="status-warning"> · {setupCount} need{setupCount === 1 ? 's' : ''} setup</span>}
         {errorCount > 0 && <span className="status-error"> · {errorCount} error{errorCount > 1 ? 's' : ''}</span>}
         {lastSyncedAt && <span> · last {new Date(lastSyncedAt).toLocaleString()}</span>}
       </div>

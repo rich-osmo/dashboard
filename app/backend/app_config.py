@@ -22,6 +22,8 @@ ALLOWED_SECRET_KEYS = frozenset(
         "RAMP_CLIENT_SECRET",
         "ANTHROPIC_API_KEY",
         "OPENAI_API_KEY",
+        "GOOGLE_CLIENT_ID",
+        "GOOGLE_CLIENT_SECRET",
     }
 )
 

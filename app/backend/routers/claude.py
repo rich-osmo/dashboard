@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import pty
+import shutil
 import signal
 import struct
 import termios
@@ -156,17 +157,22 @@ async def claude_terminal(ws: WebSocket, persona_id: int | None = Query(None)):
         except Exception:
             pass  # Gracefully degrade if DB lookup fails
 
+    # Resolve full path to claude binary before fork (child may have different PATH)
+    claude_bin = shutil.which("claude") or "claude"
+
     # Fork a PTY running claude
     child_pid, fd = pty.fork()
 
     if child_pid == 0:
         # Child process — exec claude with EA system prompt
-        os.chdir(REPO_DIR)
-        os.environ["TERM"] = "xterm-256color"
-        # Clear nested-session guard so Claude Code doesn't refuse to start
-        os.environ.pop("CLAUDECODE", None)
-        os.execlp("claude", "claude", "--strict-mcp-config", "--system-prompt", system_prompt)
-        # execlp never returns
+        try:
+            os.chdir(REPO_DIR)
+            os.environ["TERM"] = "xterm-256color"
+            # Clear nested-session guard so Claude Code doesn't refuse to start
+            os.environ.pop("CLAUDECODE", None)
+            os.execlp(claude_bin, "claude", "--strict-mcp-config", "--system-prompt", system_prompt)
+        except Exception:
+            os._exit(1)  # MUST exit child — never fall through to parent code
 
     # Parent process — register and relay between WebSocket and PTY
     async with _sessions_lock:

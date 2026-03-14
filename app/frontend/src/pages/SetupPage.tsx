@@ -11,6 +11,7 @@ import {
   useCompleteSetup,
   useTestConnection,
   useGoogleAuth,
+  useGranolaAuth,
   useAuthStatus,
 } from '../api/hooks';
 import type { ConnectorInfo, UserProfile } from '../api/types';
@@ -190,6 +191,7 @@ function ConnectorCard({ connector }: { connector: ConnectorInfo }) {
   const updateSecret = useUpdateSecret();
   const testConn = useTestConnection();
   const googleAuth = useGoogleAuth();
+  const granolaAuth = useGranolaAuth();
   const { data: authData } = useAuthStatus();
   const [expanded, setExpanded] = useState(false);
   const [tokenInputs, setTokenInputs] = useState<Record<string, string>>({});
@@ -259,12 +261,14 @@ function ConnectorCard({ connector }: { connector: ConnectorInfo }) {
         <div className="setup-connector-body">
           {/* OAuth connectors */}
           {connector.category === 'oauth' && !isConnected && (
+            connector.secret_keys.length === 0 || connector.secret_keys.every(k => secretsData[k]?.configured)
+          ) && (
             <button
               className="btn-primary"
-              onClick={() => googleAuth.mutate()}
-              disabled={googleAuth.isPending}
+              onClick={() => connector.id === 'granola' ? granolaAuth.mutate() : googleAuth.mutate()}
+              disabled={connector.id === 'granola' ? granolaAuth.isPending : googleAuth.isPending}
             >
-              {googleAuth.isPending ? 'Authenticating...' : 'Sign in with Google'}
+              {(connector.id === 'granola' ? granolaAuth.isPending : googleAuth.isPending) ? 'Authenticating...' : 'Authenticate'}
             </button>
           )}
           {connector.category === 'oauth' && isConnected && (

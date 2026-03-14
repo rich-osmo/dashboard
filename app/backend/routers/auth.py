@@ -1,31 +1,36 @@
 """Authentication status and management for connected services."""
 
 import logging
-from pathlib import Path
 
 from fastapi import APIRouter
 from pydantic import BaseModel
 
 from app_config import ALLOWED_SECRET_KEYS, delete_secret, get_secret, set_secret
-from config import GCLOUD_CREDENTIALS_PATH, get_google_scopes
+from config import DATA_DIR, get_google_scopes
 from database import get_write_db
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-TOKEN_PATH = Path(__file__).parent.parent / ".google_token.json"
+TOKEN_PATH = DATA_DIR / ".google_token.json"
 
 
 def _check_google() -> dict:
     """Check Google auth status by validating credentials."""
+    from connectors.google_auth import _get_client_credentials
+
     result = {"configured": False, "connected": False, "error": None, "detail": None}
 
-    if not GCLOUD_CREDENTIALS_PATH.exists() and not TOKEN_PATH.exists():
-        result["detail"] = "No credentials found. Run: gcloud auth application-default login"
+    has_client_creds = _get_client_credentials() is not None
+    if not has_client_creds and not TOKEN_PATH.exists():
+        result["detail"] = (
+            "No Google credentials found. Add GOOGLE_CLIENT_ID and "
+            "GOOGLE_CLIENT_SECRET in Settings."
+        )
         return result
 
-    result["configured"] = True
+    result["configured"] = has_client_creds or TOKEN_PATH.exists()
     try:
         from connectors.google_auth import get_google_credentials
 
@@ -201,6 +206,11 @@ def _check_granola() -> dict:
     return result
 
 
+def _check_news() -> dict:
+    """News requires no auth — always available."""
+    return {"configured": True, "connected": True, "error": None, "detail": "News aggregation works automatically — no setup needed"}
+
+
 def _get_sync_states() -> dict:
     """Fetch last sync state per source from the database."""
     from database import get_db_connection
@@ -236,6 +246,8 @@ _SECRET_TO_SYNC = {
     "NOTION_TOKEN": ["notion", "notion_meetings"],
     "RAMP_CLIENT_ID": ["ramp", "ramp_vendors", "ramp_bills"],
     "RAMP_CLIENT_SECRET": ["ramp", "ramp_vendors", "ramp_bills"],
+    "GOOGLE_CLIENT_ID": ["gmail", "calendar", "drive", "sheets", "docs"],
+    "GOOGLE_CLIENT_SECRET": ["gmail", "calendar", "drive", "sheets", "docs"],
 }
 
 # Map connector IDs to sync_state sources
@@ -308,8 +320,6 @@ def google_scopes():
             needs_reauth = not set(required).issubset(set(current))
         except Exception:
             pass
-    elif GCLOUD_CREDENTIALS_PATH.exists():
-        needs_reauth = True  # ADC doesn't store scopes — assume stale
 
     return {"required": required, "current": current, "needs_reauth": needs_reauth}
 
@@ -374,6 +384,7 @@ def test_connection(service: str):
         "github": _check_github,
         "ramp": _check_ramp,
         "claude_code": _check_claude_code,
+        "news": _check_news,
     }
     # Lazy import to avoid circular deps
     from routers.whatsapp import _check_whatsapp

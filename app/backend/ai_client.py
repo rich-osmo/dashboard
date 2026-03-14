@@ -170,6 +170,8 @@ class ChatResponse:
     text: str = ""
     tool_calls: list[ToolCall] = field(default_factory=list)
     stop_reason: str = "end_turn"
+    # Raw Gemini content parts for replay (preserves thought_signature on all parts)
+    _gemini_parts: list | None = None
 
 
 async def generate_chat(
@@ -351,6 +353,11 @@ async def _chat_gemini(
     # Convert messages to Gemini format using native Part types
     parts = []
     for msg in messages:
+        # Raw Gemini parts — pass through directly (preserves thought_signature)
+        if msg.get("_gemini"):
+            parts.append({"role": msg["role"], "parts": msg["parts"]})
+            continue
+
         content = msg["content"]
         if isinstance(content, str):
             role = "user" if msg["role"] == "user" else "model"
@@ -428,7 +435,10 @@ async def _chat_gemini(
                 text_parts.append(part.text)
 
         if tool_calls:
-            return ChatResponse(text="\n".join(text_parts), tool_calls=tool_calls, stop_reason="tool_use")
+            return ChatResponse(
+                text="\n".join(text_parts), tool_calls=tool_calls, stop_reason="tool_use",
+                _gemini_parts=list(result_parts),
+            )
         return ChatResponse(text="\n".join(text_parts), stop_reason="end_turn")
 
     return ChatResponse(text=response.text or "", stop_reason="end_turn")

@@ -80,13 +80,15 @@ app.add_middleware(
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response: Response = await call_next(request)
+        # Derive WebSocket origin from the request so it works on any port
+        host = request.headers.get("host", "localhost:8000")
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
             "script-src 'self'; "
-            "style-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
             "img-src 'self' data:; "
-            "connect-src 'self' ws://localhost:8000; "
-            "font-src 'self'; "
+            f"connect-src 'self' ws://{host}; "
+            "font-src 'self' https://cdn.jsdelivr.net; "
             "frame-src 'none'; "
             "object-src 'none'"
         )
@@ -213,11 +215,25 @@ def startup():
             sys.stderr.flush()
             raise
 
+    def _migrate_google_token():
+        """Move .google_token.json from backend dir to DATA_DIR if needed."""
+        from config import DATA_DIR
+        old_path = Path(__file__).parent / ".google_token.json"
+        new_path = DATA_DIR / ".google_token.json"
+        if old_path.exists() and not new_path.exists():
+            import shutil
+            shutil.move(str(old_path), str(new_path))
+            log.info("Migrated Google token from %s to %s", old_path, new_path)
+
     _step("init_db (migrations)", init_db)
+    _step("migrate_google_token", _migrate_google_token)
     _step("init_registry (connectors)", init_registry)
     _step("rebuild_from_db (person matching cache)", rebuild_from_db)
     _step("sync_meeting_files", sync_meeting_files)
-    _step("sync_granola", sync_granola)
+
+    from connectors.registry import is_enabled
+    if is_enabled("granola"):
+        _step("sync_granola", sync_granola)
 
     from routers.sync import start_auto_sync
 

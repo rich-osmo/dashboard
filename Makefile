@@ -1,4 +1,4 @@
-.PHONY: start stop restart backend frontend status logs app build dev run test test-headed test-setup lint fmt dmg db-migrate db-upgrade db-downgrade db-current db-history db-revision whatsapp whatsapp-stop
+.PHONY: start stop restart backend frontend status logs app build dev run test test-headed test-setup lint fmt dmg release db-migrate db-upgrade db-downgrade db-current db-history db-revision whatsapp whatsapp-stop
 
 BACKEND_DIR = app/backend
 FRONTEND_DIR = app/frontend
@@ -96,6 +96,11 @@ fmt:
 
 dmg:
 	@./scripts/build-dmg.sh $(VERSION)
+
+# --- Release (DMG + GitHub) ---
+
+release:
+	@./scripts/release.sh $(VERSION) $(NOTES)
 
 # --- Tests (Playwright) ---
 
