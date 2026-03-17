@@ -36,6 +36,7 @@ const HelpPage = lazy(() => import('./pages/HelpPage').then(m => ({ default: m.H
 const SetupPage = lazy(() => import('./pages/SetupPage').then(m => ({ default: m.SetupPage })));
 
 const DrivePage = lazy(() => import('./pages/DrivePage').then(m => ({ default: m.DrivePage })));
+const ObsidianPage = lazy(() => import('./pages/ObsidianPage').then(m => ({ default: m.ObsidianPage })));
 const PeoplePage = lazy(() => import('./pages/PeoplePage').then(m => ({ default: m.PeoplePage })));
 const AgentPage = lazy(() => import('./pages/AgentPage').then(m => ({ default: m.AgentPage })));
 const SandboxPage = lazy(() => import('./pages/SandboxPage').then(m => ({ default: m.SandboxPage })));
@@ -160,6 +161,7 @@ function AppContent() {
               <Route path="/slack" element={<SlackPage />} />
               <Route path="/notion" element={<NotionPage />} />
               <Route path="/drive" element={<DrivePage />} />
+              <Route path="/obsidian" element={<ObsidianPage />} />
               <Route path="/ramp" element={<RampPage />} />
               <Route path="/ramp/bills" element={<RampPage />} />
               <Route path="/ramp/projects" element={<RampPage />} />

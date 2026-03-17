@@ -21,6 +21,11 @@ const SOURCE_LABELS: Record<string, string> = {
   note: 'Note',
   ramp: 'Ramp',
   drive: 'Drive',
+  github: 'GitHub',
+  notion: 'Notion',
+  granola: 'Granola',
+  news: 'News',
+  obsidian: 'Obsidian',
 };
 
 function getGreeting(): string {

@@ -31,6 +31,9 @@ import type {
   PrioritizedSlackData,
   NotionPage,
   PrioritizedNotionData,
+  ObsidianNote,
+  ObsidianNoteDetail,
+  PrioritizedObsidianData,
   PrioritizedEmailData,
   Email,
   EmailThreadDetail,
@@ -1168,6 +1171,43 @@ export function useRefreshPrioritizedNotion(days: number = 7) {
   });
 }
 
+export function usePrioritizedObsidian(days: number = 365) {
+  return useQuery({
+    queryKey: ['obsidian-prioritized', days],
+    queryFn: () => api.get<PrioritizedObsidianData>(`/obsidian/prioritized?days=${days}`),
+    staleTime: 10 * 60 * 1000,
+    // Poll while background ranking is in progress (stale + empty items)
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (data?.stale && data.items.length === 0) return 4000;
+      return false;
+    },
+  });
+}
+
+export function useRefreshPrioritizedObsidian(days: number = 365) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.get<PrioritizedObsidianData>(`/obsidian/prioritized?refresh=true&days=${days}`),
+    onSuccess: (data) => {
+      qc.setQueryData<PrioritizedObsidianData>(['obsidian-prioritized', days], data);
+      if (data.stale) {
+        setTimeout(() => qc.invalidateQueries({ queryKey: ['obsidian-prioritized', days] }), 3000);
+        setTimeout(() => qc.invalidateQueries({ queryKey: ['obsidian-prioritized', days] }), 8000);
+      }
+    },
+  });
+}
+
+export function useObsidianNote(noteId: string | null) {
+  return useQuery({
+    queryKey: ['obsidian-note', noteId],
+    queryFn: () => api.get<ObsidianNoteDetail>(`/obsidian/note/${noteId}`),
+    enabled: !!noteId,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 export function usePrioritizedEmail(days: number = 7) {
   return useQuery({
     queryKey: ['email-prioritized', days],
@@ -1384,7 +1424,7 @@ export function useDismissPrioritizedItem() {
         }
       } else {
         // Optimistic dismiss for all prioritized sources (slack, email, notion, ramp, news, drive)
-        const keyMap: Record<string, string> = { slack: 'slack-prioritized', email: 'email-prioritized', notion: 'notion-prioritized', ramp: 'ramp-prioritized', news: 'news-prioritized', drive: 'drive-prioritized' };
+        const keyMap: Record<string, string> = { slack: 'slack-prioritized', email: 'email-prioritized', notion: 'notion-prioritized', ramp: 'ramp-prioritized', news: 'news-prioritized', drive: 'drive-prioritized', obsidian: 'obsidian-prioritized' };
         const qkPrefix = keyMap[source];
         if (qkPrefix) {
           await qc.cancelQueries({ queryKey: [qkPrefix] });
@@ -1405,7 +1445,9 @@ export function useDismissPrioritizedItem() {
       qc.invalidateQueries({ queryKey: ['ramp-prioritized'] });
       qc.invalidateQueries({ queryKey: ['news-prioritized'] });
       qc.invalidateQueries({ queryKey: ['drive-prioritized'] });
+      qc.invalidateQueries({ queryKey: ['obsidian-prioritized'] });
       qc.invalidateQueries({ queryKey: ['github-pulls'] });
+      qc.invalidateQueries({ queryKey: ['meetings'] });
       qc.invalidateQueries({ queryKey: ['dashboard'] });
       pushUndo({
         label: `${source} item dismissed`,
@@ -1415,8 +1457,11 @@ export function useDismissPrioritizedItem() {
           qc.invalidateQueries({ queryKey: ['notion-prioritized'] });
           qc.invalidateQueries({ queryKey: ['email-prioritized'] });
           qc.invalidateQueries({ queryKey: ['ramp-prioritized'] });
+          qc.invalidateQueries({ queryKey: ['news-prioritized'] });
           qc.invalidateQueries({ queryKey: ['drive-prioritized'] });
+          qc.invalidateQueries({ queryKey: ['obsidian-prioritized'] });
           qc.invalidateQueries({ queryKey: ['github-pulls'] });
+          qc.invalidateQueries({ queryKey: ['meetings'] });
           qc.invalidateQueries({ queryKey: ['dashboard'] });
         },
       });
@@ -1750,6 +1795,25 @@ export function useAllNotion() {
     queryKey: ['all-notion'],
     queryFn: ({ pageParam = 0 }) =>
       api.get<PaginatedResponse<NotionPage>>(`/notion/all?offset=${pageParam}&limit=${ALL_ITEMS_PAGE_SIZE}`),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) =>
+      lastPage.has_more ? lastPage.offset + lastPage.limit : undefined,
+  });
+}
+
+export function useObsidianVault() {
+  return useQuery({
+    queryKey: ['obsidian-vault'],
+    queryFn: () => api.get<{ configured_path: string | null; detected_path: string | null; active_path: string | null }>('/obsidian/vault'),
+    staleTime: 60 * 60 * 1000,
+  });
+}
+
+export function useAllObsidian() {
+  return useInfiniteQuery({
+    queryKey: ['all-obsidian'],
+    queryFn: ({ pageParam = 0 }) =>
+      api.get<PaginatedResponse<ObsidianNote>>(`/obsidian/all?offset=${pageParam}&limit=${ALL_ITEMS_PAGE_SIZE}`),
     initialPageParam: 0,
     getNextPageParam: (lastPage) =>
       lastPage.has_more ? lastPage.offset + lastPage.limit : undefined,

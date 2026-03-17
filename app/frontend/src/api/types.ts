@@ -744,6 +744,35 @@ export interface PrioritizedNotionData {
   stale?: boolean;
 }
 
+export interface ObsidianNote {
+  id: string;
+  title: string;
+  relative_path: string;
+  folder: string | null;
+  content_preview: string | null;
+  tags: string | null;
+  wiki_links: string | null;
+  word_count: number;
+  created_time: string;
+  modified_time: string;
+}
+
+export interface ObsidianNoteDetail extends ObsidianNote {
+  content: string | null;
+  frontmatter_json: string | null;
+}
+
+export interface PrioritizedObsidianNote extends ObsidianNote {
+  priority_score: number;
+  priority_reason: string;
+}
+
+export interface PrioritizedObsidianData {
+  items: PrioritizedObsidianNote[];
+  error?: string;
+  stale?: boolean;
+}
+
 export interface RampTransaction {
   id: string;
   amount: number;

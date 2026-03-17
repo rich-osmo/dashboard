@@ -3,6 +3,7 @@
 import json
 import logging
 import re
+from datetime import datetime
 
 from connectors.mcp_client import call_granola_tool_sync
 from database import batch_upsert, get_write_db
@@ -17,6 +18,23 @@ _MEETING_RE = re.compile(
 _PARTICIPANTS_RE = re.compile(r"<known_participants>\s*(.*?)\s*</known_participants>", re.DOTALL)
 _SUMMARY_RE = re.compile(r"<summary>\s*(.*?)\s*</summary>", re.DOTALL)
 _MEETING_BLOCK_RE = re.compile(r"<meeting\s[^>]*>.*?</meeting>", re.DOTALL)
+
+# Granola returns dates like "Mar 5, 2026 7:30 PM" — normalize to ISO 8601
+_HUMAN_DATE_FMT = "%b %d, %Y %I:%M %p"
+
+
+def _normalize_date(date_str: str) -> str:
+    """Convert Granola's human-readable dates to ISO 8601, passing through ISO dates unchanged."""
+    if not date_str:
+        return date_str
+    # Already ISO format
+    if date_str[:4].isdigit() and "-" in date_str[:5]:
+        return date_str
+    try:
+        dt = datetime.strptime(date_str, _HUMAN_DATE_FMT)
+        return dt.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    except ValueError:
+        return date_str
 
 
 def _parse_participants(text: str) -> list[str]:
@@ -62,10 +80,26 @@ def _parse_meetings_xml(raw: str) -> list[dict]:
     return meetings
 
 
-def sync_granola_meetings() -> int:
-    """Fetch meetings from Granola MCP server and upsert into DB."""
+def sync_granola_meetings(
+    time_range: str = "last_30_days",
+    custom_start: str | None = None,
+    custom_end: str | None = None,
+) -> int:
+    """Fetch meetings from Granola MCP server and upsert into DB.
+
+    Args:
+        time_range: One of "this_week", "last_week", "last_30_days", "custom".
+        custom_start: ISO date for custom range start (required if time_range is "custom").
+        custom_end: ISO date for custom range end (required if time_range is "custom").
+    """
     # list_meetings returns meeting metadata (id, title, date, attendees)
-    raw = call_granola_tool_sync("list_meetings", {"time_range": "last_30_days"})
+    args: dict = {"time_range": time_range}
+    if time_range == "custom":
+        if custom_start:
+            args["custom_start"] = custom_start
+        if custom_end:
+            args["custom_end"] = custom_end
+    raw = call_granola_tool_sync("list_meetings", args)
     if not raw:
         logger.warning("Granola MCP returned empty response — check authentication")
         return 0
@@ -126,12 +160,13 @@ def sync_granola_meetings() -> int:
         # XML format has "summary", JSON format had "enhanced_notes"/"private_notes"
         notes_text = detail.get("summary", "") or detail.get("enhanced_notes", "") or detail.get("private_notes", "")
 
+        date_iso = _normalize_date(m.get("date", m.get("created_at", "")))
         rows.append(
             (
                 mid,
                 m.get("title", ""),
-                m.get("date", m.get("created_at", "")),
-                m.get("date", m.get("updated_at", "")),
+                date_iso,
+                date_iso,
                 "",  # calendar_event_id
                 "",  # calendar_event_summary
                 json.dumps(attendees),

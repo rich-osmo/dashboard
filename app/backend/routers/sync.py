@@ -361,6 +361,30 @@ def sync_news():
         _handle_sync_error("news", e, time.monotonic() - t0)
 
 
+def sync_obsidian():
+    if not _is_enabled("obsidian"):
+        return
+    t0 = time.monotonic()
+    try:
+        from connectors.obsidian import sync_obsidian_notes
+
+        count = sync_obsidian_notes()
+        _update_sync_state("obsidian", "success", None, count, elapsed=time.monotonic() - t0)
+    except ImportError:
+        _update_sync_state("obsidian", "error", "Obsidian connector not available", 0)
+        return
+    except Exception as e:
+        _handle_sync_error("obsidian", e, time.monotonic() - t0)
+        return
+    # Rerank after sync so LLM priority is fresh
+    try:
+        from routers.obsidian_api import rerank_obsidian
+
+        rerank_obsidian()
+    except Exception:
+        pass
+
+
 def sync_drive():
     if not _is_enabled("google_drive"):
         return
@@ -462,7 +486,9 @@ def _run_full_sync():
         local_fns: list[tuple[str, callable]] = [("markdown", sync_meeting_files)]
         if _is_enabled("granola"):
             local_fns.append(("granola", sync_granola))
-        _run_group(local_fns, max_workers=2)
+        if _is_enabled("obsidian"):
+            local_fns.append(("obsidian", sync_obsidian))
+        _run_group(local_fns, max_workers=3)
 
         if _sync_cancel.is_set():
             return
@@ -685,6 +711,7 @@ def trigger_source_sync(source: str, background_tasks: BackgroundTasks, org_only
         "ramp_vendors": sync_ramp_vendors,
         "ramp_bills": sync_ramp_bills,
         "drive": sync_drive,
+        "obsidian": sync_obsidian,
         "sheets": sync_sheets,
         "docs": sync_docs,
         "onedrive": sync_onedrive,

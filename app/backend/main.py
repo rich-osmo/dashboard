@@ -52,6 +52,7 @@ from routers import (
     news,
     notes,
     notion_api,
+    obsidian_api,
     people,
     personas,
     priorities,
@@ -147,6 +148,7 @@ app.include_router(gmail.router)
 app.include_router(calendar_api.router)
 app.include_router(slack_api.router)
 app.include_router(notion_api.router)
+app.include_router(obsidian_api.router)
 app.include_router(github_api.router)
 app.include_router(ramp_api.router)
 app.include_router(projects_api.router)

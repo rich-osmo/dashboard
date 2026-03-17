@@ -187,6 +187,78 @@ function WhatsAppQRSection() {
   return null;
 }
 
+function ObsidianVaultSection() {
+  const [vaultPath, setVaultPath] = useState('');
+  const [status, setStatus] = useState<{ message: string; ok: boolean } | null>(null);
+  const [vaultInfo, setVaultInfo] = useState<{ configured_path: string | null; detected_path: string | null; active_path: string | null } | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  // Fetch vault config on mount
+  if (!loaded) {
+    setLoaded(true);
+    fetch('/api/obsidian/vault')
+      .then(r => r.json())
+      .then(data => {
+        setVaultInfo(data);
+        if (data.configured_path) setVaultPath(data.configured_path);
+      })
+      .catch(() => {});
+  }
+
+  const handleSave = async () => {
+    setStatus(null);
+    try {
+      const res = await fetch('/api/obsidian/vault', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vault_path: vaultPath }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setStatus({ message: data.error, ok: false });
+      } else {
+        setStatus({ message: data.vault_path ? `Vault set to ${data.vault_path}` : 'Cleared — using auto-detected vault', ok: true });
+        // Re-fetch vault info
+        const info = await fetch('/api/obsidian/vault').then(r => r.json());
+        setVaultInfo(info);
+      }
+    } catch {
+      setStatus({ message: 'Failed to save', ok: false });
+    }
+  };
+
+  return (
+    <div style={{ margin: 'var(--space-md) 0' }}>
+      <div style={{ fontSize: 'var(--text-sm)', marginBottom: 'var(--space-xs)' }}>
+        <strong>Vault location</strong>
+        {vaultInfo?.detected_path && !vaultInfo?.configured_path && (
+          <span style={{ opacity: 0.7 }}> (auto-detected: {vaultInfo.detected_path})</span>
+        )}
+        {vaultInfo?.active_path && vaultInfo?.configured_path && (
+          <span style={{ opacity: 0.7 }}> (custom: {vaultInfo.configured_path})</span>
+        )}
+      </div>
+      <div className="setup-secret-input">
+        <input
+          type="text"
+          value={vaultPath}
+          onChange={(e) => setVaultPath(e.target.value)}
+          placeholder={vaultInfo?.detected_path || 'e.g. ~/Documents/obsidian/my-vault'}
+          style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 'var(--text-sm)' }}
+        />
+        <button className="btn-primary" onClick={handleSave}>
+          {vaultPath ? 'Save' : 'Clear'}
+        </button>
+      </div>
+      {status && (
+        <div className={`setup-feedback ${status.ok ? 'setup-feedback-ok' : 'setup-feedback-err'}`}>
+          {status.message}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ServiceCard({
   connector,
   status,
@@ -422,6 +494,9 @@ function ServiceCard({
 
           {/* WhatsApp QR code pairing */}
           {connector.id === 'whatsapp' && <WhatsAppQRSection />}
+
+          {/* Obsidian vault path */}
+          {connector.id === 'obsidian' && <ObsidianVaultSection />}
 
           {/* Help steps */}
           <button className="setup-help-toggle" onClick={() => setShowHelp(!showHelp)}>
@@ -891,7 +966,7 @@ function EmailCalendarProviderPicker() {
 
 const CONNECTOR_GROUPS: { label: string; description: string; ids: string[] }[] = [
   { label: 'Email & Calendar', description: 'Choose Google or Microsoft 365 for email and calendar.', ids: ['google', 'microsoft'] },
-  { label: 'Documents', description: 'Files, docs, and spreadsheets from Google Drive or OneDrive.', ids: ['google_drive', 'microsoft_drive', 'notion'] },
+  { label: 'Documents', description: 'Files, docs, and spreadsheets from Google Drive, OneDrive, or local vaults.', ids: ['google_drive', 'microsoft_drive', 'notion', 'obsidian'] },
   { label: 'Communication', description: 'Search and sync messages from your team tools.', ids: ['slack'] },
   { label: 'Meeting Transcripts', description: 'Import meeting notes and transcripts.', ids: ['granola'] },
   { label: 'Development', description: 'Pull requests, issues, and AI-assisted coding.', ids: ['github', 'claude_code'] },

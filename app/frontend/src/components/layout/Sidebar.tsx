@@ -136,7 +136,7 @@ export function Sidebar() {
           {(active.has('google') || active.has('granola')) && <NavLink to="/meetings">Meetings</NavLink>}
         </nav>
 
-        {(active.has('google') || active.has('slack') || active.has('notion') || active.has('github') || active.has('ramp') || active.has('news') || active.has('google_drive')) && (
+        {(active.has('google') || active.has('slack') || active.has('notion') || active.has('github') || active.has('ramp') || active.has('news') || active.has('google_drive') || active.has('obsidian')) && (
           <>
             <div className="sidebar-section-label">sources</div>
             <nav>
@@ -146,6 +146,7 @@ export function Sidebar() {
               {active.has('slack') && <NavLink to="/slack">Slack</NavLink>}
               {active.has('notion') && <NavLink to="/notion">Notion</NavLink>}
               {active.has('google_drive') && <NavLink to="/drive">Drive</NavLink>}
+              {active.has('obsidian') && <NavLink to="/obsidian">Obsidian</NavLink>}
               {active.has('ramp') && <>
                 <NavLink to="/ramp" end>Ramp</NavLink>
                 {onRampPage && <>

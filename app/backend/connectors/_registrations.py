@@ -18,6 +18,10 @@ register(
             "Enable Gmail, Calendar, Drive, and Sheets APIs",
             "Go to 'Credentials' → create 'OAuth 2.0 Client ID' (Desktop app type)",
             "Copy the Client ID and Client Secret below, then click Authenticate",
+            "If you see 'Google hasn't verified this app': click 'Advanced' → "
+            "'Go to [app name] (unsafe)' to approve your own OAuth client",
+            "If authentication fails for other users: go to 'OAuth consent screen' → "
+            "publish the app (move out of Testing mode)",
         ],
         help_url="https://console.cloud.google.com/apis/credentials",
         sync_sources=["gmail", "calendar"],
@@ -38,6 +42,10 @@ register(
         help_steps=[
             "Connect Google (Gmail/Calendar) first — same OAuth token",
             "Enable this connector to sync recent Drive activity",
+            "If you see 'Google hasn't verified this app': click 'Advanced' → "
+            "'Go to [app name] (unsafe)' to approve your own OAuth client",
+            "If authentication fails for other users: go to 'OAuth consent screen' → "
+            "publish the app (move out of Testing mode)",
         ],
         sync_sources=["drive", "sheets", "docs"],
         default_enabled=False,
@@ -218,6 +226,27 @@ register(
         default_enabled=True,
         sync_fn="connectors.news.sync_news",
         check_fn=None,
+    )
+)
+
+# --- Obsidian ---
+register(
+    ConnectorInfo(
+        id="obsidian",
+        name="Obsidian",
+        description="Notes and documents from local Obsidian vault",
+        category="local",
+        secret_keys=[],
+        help_steps=[
+            "Install Obsidian from obsidian.md (or have a vault directory)",
+            "Your vault will be auto-detected from Obsidian's config",
+            "Or set the vault path in connector settings (connectors.obsidian.vault_path)",
+        ],
+        help_url="https://obsidian.md",
+        sync_sources=["obsidian"],
+        default_enabled=False,
+        sync_fn="connectors.obsidian.sync_obsidian_notes",
+        check_fn="routers.auth._check_obsidian",
     )
 )
 

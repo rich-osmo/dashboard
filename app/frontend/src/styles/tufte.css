@@ -2221,6 +2221,41 @@ tbody tr:last-child td {
   border-color: var(--color-border);
 }
 
+.priority-source-ramp {
+  color: #e5622a;
+  border-color: #e5622a;
+}
+
+.priority-source-drive {
+  color: #1a73e8;
+  border-color: #1a73e8;
+}
+
+.priority-source-github {
+  color: #24292f;
+  border-color: #24292f;
+}
+
+.priority-source-notion {
+  color: #37352f;
+  border-color: #37352f;
+}
+
+.priority-source-granola {
+  color: #6b4f8e;
+  border-color: #6b4f8e;
+}
+
+.priority-source-news {
+  color: #0f7b6c;
+  border-color: #0f7b6c;
+}
+
+.priority-source-obsidian {
+  color: #7e6ad2;
+  border-color: #7e6ad2;
+}
+
 .priority-item-reason {
   font-size: var(--text-sm);
   color: var(--color-text-muted);

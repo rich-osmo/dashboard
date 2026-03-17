@@ -234,6 +234,28 @@ def _check_granola() -> dict:
     return result
 
 
+def _check_obsidian() -> dict:
+    """Check if an Obsidian vault is accessible."""
+    result = {"configured": False, "connected": False, "error": None, "detail": None}
+    try:
+        from connectors.obsidian import get_vault_path
+
+        vault = get_vault_path()
+        if vault and vault.is_dir():
+            md_count = sum(1 for _ in vault.rglob("*.md"))
+            result["configured"] = True
+            result["connected"] = True
+            result["detail"] = f"Vault at {vault} ({md_count} notes)"
+        elif vault:
+            result["configured"] = True
+            result["error"] = f"Vault path {vault} not found"
+        else:
+            result["error"] = "No Obsidian vault detected — install Obsidian or set vault_path"
+    except Exception as e:
+        result["error"] = str(e)
+    return result
+
+
 def _check_news() -> dict:
     """News requires no auth — always available."""
     return {
@@ -272,6 +294,7 @@ _AUTH_TO_SYNC = {
     "granola": ["granola"],
     "github": ["github"],
     "ramp": ["ramp", "ramp_vendors", "ramp_bills"],
+    "obsidian": ["obsidian"],
 }
 
 
@@ -299,6 +322,7 @@ _CONNECTOR_TO_SYNC = {
     "github": ["github"],
     "ramp": ["ramp", "ramp_vendors", "ramp_bills"],
     "news": ["news"],
+    "obsidian": ["obsidian"],
 }
 
 
@@ -331,6 +355,7 @@ def auth_status():
         "github": _check_github(),
         "ramp": _check_ramp(),
         "claude_code": _check_claude_code(),
+        "obsidian": _check_obsidian(),
     }
 
     # Attach sync state to each service
@@ -454,6 +479,7 @@ def test_connection(service: str):
         "ramp": _check_ramp,
         "claude_code": _check_claude_code,
         "news": _check_news,
+        "obsidian": _check_obsidian,
     }
     # Lazy import to avoid circular deps
     from routers.whatsapp import _check_whatsapp

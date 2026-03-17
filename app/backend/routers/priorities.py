@@ -114,6 +114,57 @@ def _build_context(db) -> dict:
         ).fetchall()
     ]
 
+    github_open = [
+        dict(r)
+        for r in db.execute(
+            "SELECT number, title, state, author, repo, review_requested, "
+            "created_at, updated_at, labels_json, body_preview "
+            "FROM github_pull_requests "
+            "WHERE state = 'open' "
+            "ORDER BY review_requested DESC, updated_at DESC LIMIT 20"
+        ).fetchall()
+    ]
+
+    notion_recent = [
+        dict(r)
+        for r in db.execute(
+            "SELECT title, url, last_edited_time, last_edited_by "
+            "FROM notion_pages "
+            "WHERE last_edited_time >= datetime('now', '-3 days') "
+            "ORDER BY last_edited_time DESC LIMIT 15"
+        ).fetchall()
+    ]
+
+    granola_recent = [
+        dict(r)
+        for r in db.execute(
+            "SELECT title, created_at, attendees_json, panel_summary_plain "
+            "FROM granola_meetings "
+            "WHERE created_at >= datetime('now', '-7 days') AND valid_meeting = 1 "
+            "ORDER BY created_at DESC LIMIT 10"
+        ).fetchall()
+    ]
+
+    news_recent = [
+        dict(r)
+        for r in db.execute(
+            "SELECT title, source, domain, snippet, found_at "
+            "FROM news_items "
+            "WHERE found_at >= datetime('now', '-24 hours') "
+            "ORDER BY found_at DESC LIMIT 20"
+        ).fetchall()
+    ]
+
+    obsidian_recent = [
+        dict(r)
+        for r in db.execute(
+            "SELECT title, folder, tags, content_preview, modified_time "
+            "FROM obsidian_notes "
+            "WHERE modified_time >= datetime('now', '-3 days') "
+            "ORDER BY modified_time DESC LIMIT 10"
+        ).fetchall()
+    ]
+
     return {
         "calendar_today": calendar_today,
         "meetings_upcoming": meetings_upcoming,
@@ -122,6 +173,11 @@ def _build_context(db) -> dict:
         "open_notes": open_notes,
         "ramp_bills_notable": ramp_bills_notable,
         "drive_recent": drive_recent,
+        "github_open": github_open,
+        "notion_recent": notion_recent,
+        "granola_recent": granola_recent,
+        "news_recent": news_recent,
+        "obsidian_recent": obsidian_recent,
     }
 
 
@@ -129,7 +185,8 @@ def _build_system_prompt() -> str:
     ctx = get_prompt_context()
     return f"""\
 You are a morning briefing assistant {ctx}. Your job is to analyze \
-the user's Slack messages, emails, calendar, open notes, Ramp bills, and recently modified Drive files \
+the user's Slack messages, emails, calendar, open notes, Ramp bills, Drive files, \
+GitHub PRs, Notion pages, recent meetings (Granola), news, and Obsidian notes \
 and produce a morning briefing.
 
 Your response must be a JSON object with two keys:
@@ -142,7 +199,7 @@ Reference specific meetings, people, or topics by name. Do not use bullet points
 2. "items" — An array of up to 25 important items to focus on today. Each item has:
    - title: short (max 10 words)
    - reason: one sentence — why it matters or what action to take
-   - source: "slack", "email", "calendar", "note", "ramp", or "drive"
+   - source: "slack", "email", "calendar", "note", "ramp", "drive", "github", "notion", "granola", "news", or "obsidian"
    - urgency: "high", "medium", or "low"
 
 Prioritize items:
@@ -150,16 +207,21 @@ Prioritize items:
 2. Meetings happening today that need prep
 3. Unread emails from executives, direct reports, or external stakeholders
 4. Threads where the user was asked a question or tagged
-5. Open notes/tasks that are due or high priority
-6. Anything that looks time-sensitive or blocking someone
-7. Ramp bills that are overdue, pending approval, or unusually large (>$10k)
-8. Recently modified Drive documents shared with you or being actively collaborated on
+5. GitHub PRs where review is requested from the user, or stale open PRs
+6. Open notes/tasks that are due or high priority
+7. Anything that looks time-sensitive or blocking someone
+8. Ramp bills that are overdue, pending approval, or unusually large (>$10k)
+9. Recently modified Drive documents or Notion pages being actively collaborated on
+10. Recent Granola meeting summaries with action items or follow-ups needed
+11. Breaking or highly relevant news items
+12. Recently modified Obsidian notes that may need follow-up
 
 Ignore and never surface:
 - Marketing, promotional, or newsletter emails
 - Automated notifications (build alerts, billing receipts, subscription confirmations)
 - Mass mailing list messages that don't require a personal reply
 - Ramp bills that are already paid
+- News items that are not relevant to the user's work or interests
 
 Be concise and actionable. Focus on what the user should DO, not just what happened.
 
