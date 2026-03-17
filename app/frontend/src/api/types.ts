@@ -1040,3 +1040,14 @@ export interface AgentMessage {
   tool_calls: AgentToolCall[];
   created_at: string;
 }
+
+// --- Sandbox ---
+
+export interface SandboxApp {
+  id: string;
+  name: string;
+  description: string;
+  created_at: string;
+  updated_at: string;
+  files: string[];
+}

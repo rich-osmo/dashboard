@@ -71,6 +71,9 @@ def _build_system_prompt() -> str:
         "Key REST endpoints: /api/meetings, /api/gmail/search, /api/slack/search, "
         "/api/calendar/search, /api/notion/search, /api/notes, /api/issues, "
         "/api/people, /api/priorities, /api/search?q=. "
+        "Sandbox APIs: GET/POST /api/sandbox/apps (list/create), "
+        "GET/PATCH/DELETE /api/sandbox/apps/{id} (read/update/delete app), "
+        "GET/PUT/DELETE /api/sandbox/apps/{id}/files/{path} (read/write/delete files). "
         "Key tables: granola_meetings (transcripts in transcript_text), calendar_events, "
         "emails, slack_messages, notion_pages, notes, people, issues. "
         + (f"{team_info} " if team_info else "")
@@ -102,6 +105,34 @@ def _build_system_prompt() -> str:
             pass  # Table may not exist yet or be empty
 
     return prompt
+
+
+def _build_sandbox_system_prompt(manifest: dict, files: list[str]) -> str:
+    """Build a system prompt for Claude when editing a sandbox app."""
+    app_name = manifest.get("name", "Sandbox App")
+    desc = manifest.get("description", "")
+
+    files_str = ", ".join(files) if files else "(none yet — start with index.html)"
+
+    return (
+        f"You are building a web app called '{app_name}'" + (f" — {desc}" if desc else "") + ". "
+        "This is a single-page HTML/CSS/JS app with no build step required. "
+        "The entry point is index.html. You can create additional .js, .css, and .html files as needed. "
+        "IMPORTANT: Only modify files in the current working directory. Do NOT modify files outside it. "
+        "Do NOT touch manifest.json — the dashboard manages it. "
+        "\n\nThe dashboard API is available at the same origin — use fetch('/api/...'). "
+        "Key REST endpoints: "
+        "/api/people, /api/notes, /api/issues, /api/meetings, /api/briefing, "
+        "/api/weather, /api/priorities, /api/gmail/search?q=, /api/slack/search?q=, "
+        "/api/calendar/search?q=, /api/notion/search?q=, /api/news, /api/drive/files, "
+        "/api/github/prs, /api/ramp/transactions, /api/search?q=. "
+        "GraphQL is available at /graphql for rich queries linking people to all data. "
+        "\n\nYou can use CDN libraries via <script> tags from "
+        "cdn.jsdelivr.net, cdnjs.cloudflare.com, unpkg.com, or esm.sh. "
+        "Use system fonts: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif. "
+        "Make the app visually polished — the user sees it in an iframe alongside this terminal. "
+        f"\n\nCurrent files in the app directory: {files_str}"
+    )
 
 
 MAX_CONCURRENT = 5
@@ -299,7 +330,11 @@ async def _demo_claude_terminal(ws: WebSocket):
 
 
 @router.websocket("/ws/claude")
-async def claude_terminal(ws: WebSocket, persona_id: int | None = Query(None)):
+async def claude_terminal(
+    ws: WebSocket,
+    persona_id: int | None = Query(None),
+    sandbox_id: str | None = Query(None),
+):
     await ws.accept()
 
     # Demo mode — simulated terminal
@@ -315,16 +350,41 @@ async def claude_terminal(ws: WebSocket, persona_id: int | None = Query(None)):
             await ws.close(code=4429, reason="Too many concurrent sessions")
             return
 
-    # Build system prompt, optionally augmented with persona
-    system_prompt = _build_system_prompt()
-    if persona_id:
-        try:
-            with get_db_connection(readonly=True) as db:
-                row = db.execute("SELECT system_prompt FROM personas WHERE id = ?", (persona_id,)).fetchone()
-            if row and row["system_prompt"]:
-                system_prompt += "\n\n--- Persona ---\n" + row["system_prompt"]
-        except Exception:
-            pass  # Gracefully degrade if DB lookup fails
+    # Resolve sandbox directory if building a sandbox app
+    sandbox_dir = None
+    if sandbox_id:
+        from config import DATA_DIR
+
+        sandbox_dir = (DATA_DIR / "sandbox" / sandbox_id).resolve()
+        if not sandbox_dir.is_dir() or not str(sandbox_dir).startswith(str((DATA_DIR / "sandbox").resolve())):
+            await ws.close(code=4004, reason="Sandbox app not found")
+            return
+
+    # Build system prompt
+    if sandbox_dir:
+        # Sandbox mode — focused prompt for app building
+        import json as _json
+
+        manifest = {}
+        manifest_path = sandbox_dir / "manifest.json"
+        if manifest_path.exists():
+            try:
+                manifest = _json.loads(manifest_path.read_text())
+            except Exception:
+                pass
+        files = [f.name for f in sandbox_dir.iterdir() if f.is_file() and f.name != "manifest.json"]
+        system_prompt = _build_sandbox_system_prompt(manifest, files)
+    else:
+        # Normal mode — full EA system prompt
+        system_prompt = _build_system_prompt()
+        if persona_id:
+            try:
+                with get_db_connection(readonly=True) as db:
+                    row = db.execute("SELECT system_prompt FROM personas WHERE id = ?", (persona_id,)).fetchone()
+                if row and row["system_prompt"]:
+                    system_prompt += "\n\n--- Persona ---\n" + row["system_prompt"]
+            except Exception:
+                pass  # Gracefully degrade if DB lookup fails
 
     # Resolve full path to claude binary before fork (child may have different PATH)
     claude_bin = shutil.which("claude") or "claude"
@@ -333,13 +393,13 @@ async def claude_terminal(ws: WebSocket, persona_id: int | None = Query(None)):
     child_pid, fd = pty.fork()
 
     if child_pid == 0:
-        # Child process — exec claude with EA system prompt
+        # Child process — exec claude
         try:
-            os.chdir(REPO_DIR)
+            os.chdir(str(sandbox_dir) if sandbox_dir else REPO_DIR)
             os.environ["TERM"] = "xterm-256color"
             # Clear nested-session guard so Claude Code doesn't refuse to start
             os.environ.pop("CLAUDECODE", None)
-            os.execlp(claude_bin, "claude", "--strict-mcp-config", "--system-prompt", system_prompt)
+            os.execlp(claude_bin, "claude", "--system-prompt", system_prompt)
         except Exception:
             os._exit(1)  # MUST exit child — never fall through to parent code
 

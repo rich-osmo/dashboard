@@ -136,6 +136,20 @@ class PersonaUpdate(BaseModel):
     system_prompt: Optional[str] = None
 
 
+class SandboxAppCreate(BaseModel):
+    name: str
+    description: str = ""
+
+
+class SandboxAppUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+
+class SandboxFileWrite(BaseModel):
+    content: str
+
+
 class LongformCreate(BaseModel):
     title: str = "Untitled"
     body: str = ""

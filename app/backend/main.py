@@ -58,6 +58,7 @@ from routers import (
     profile,
     projects_api,
     ramp_api,
+    sandbox,
     search,
     sheets_api,
     slack_api,
@@ -73,7 +74,11 @@ app = FastAPI(title="Personal Dashboard")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:3000",
+    ],
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type"],
 )
@@ -84,18 +89,36 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response: Response = await call_next(request)
         # Derive WebSocket origin from the request so it works on any port
         host = request.headers.get("host", "localhost:8000")
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; "
-            "script-src 'self'; "
-            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-            "img-src 'self' data:; "
-            f"connect-src 'self' ws://{host}; "
-            "font-src 'self' https://cdn.jsdelivr.net; "
-            "frame-src 'none'; "
-            "object-src 'none'"
-        )
+
+        # Sandbox app files get a relaxed CSP so they can load CDN libraries
+        is_sandbox_file = request.url.path.startswith("/api/sandbox/apps/") and "/files/" in request.url.path
+
+        if is_sandbox_file:
+            cdns = "https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com"
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; "
+                f"script-src 'self' 'unsafe-inline' 'unsafe-eval' {cdns} https://esm.sh; "
+                f"style-src 'self' 'unsafe-inline' {cdns} https://fonts.googleapis.com; "
+                "img-src 'self' data: blob: https:; "
+                f"connect-src 'self' ws://{host}; "
+                "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; "
+                "frame-src 'none'; "
+                "object-src 'none'"
+            )
+        else:
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; "
+                "script-src 'self'; "
+                "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+                "img-src 'self' data:; "
+                f"connect-src 'self' ws://{host}; "
+                "font-src 'self' https://cdn.jsdelivr.net; "
+                "frame-src 'self'; "
+                "object-src 'none'"
+            )
+
         response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
         return response
 
 
@@ -143,6 +166,7 @@ app.include_router(memory.router)
 app.include_router(whatsapp.router)
 app.include_router(agent_chat.router)
 app.include_router(changes.router)
+app.include_router(sandbox.router)
 
 # GraphQL knowledge graph API
 from graphql_api import graphql_app
@@ -189,7 +213,10 @@ def open_url(body: dict):
 def restart():
     """Rebuild frontend dist, then restart the server process."""
     if is_bundled():
-        return {"status": "not_supported", "message": "Restart not available in bundled app"}
+        return {
+            "status": "not_supported",
+            "message": "Restart not available in bundled app",
+        }
 
     import os
     import signal
@@ -221,7 +248,13 @@ def startup():
             fn()
             log.info("[startup] %s OK (%.2fs)", name, time.time() - t0)
         except BaseException as e:
-            log.error("[startup] %s FAILED after %.2fs: %s: %s", name, time.time() - t0, type(e).__name__, e)
+            log.error(
+                "[startup] %s FAILED after %.2fs: %s: %s",
+                name,
+                time.time() - t0,
+                type(e).__name__,
+                e,
+            )
             import traceback
 
             log.error("".join(traceback.format_exc()))
@@ -280,11 +313,19 @@ log.info("[frontend] DIST_DIR=%s exists=%s", DIST_DIR, DIST_DIR.exists())
 if DIST_DIR.exists():
     assets_dir = DIST_DIR / "assets"
     index_file = DIST_DIR / "index.html"
-    log.info("[frontend] assets/ exists=%s, index.html exists=%s", assets_dir.exists(), index_file.exists())
+    log.info(
+        "[frontend] assets/ exists=%s, index.html exists=%s",
+        assets_dir.exists(),
+        index_file.exists(),
+    )
     if assets_dir.exists():
         try:
             asset_files = list(assets_dir.iterdir())
-            log.info("[frontend] %d asset files: %s", len(asset_files), [f.name for f in asset_files[:10]])
+            log.info(
+                "[frontend] %d asset files: %s",
+                len(asset_files),
+                [f.name for f in asset_files[:10]],
+            )
         except Exception as e:
             log.warning("[frontend] Could not list assets: %s", e)
 
@@ -301,5 +342,6 @@ if DIST_DIR.exists():
         if file.is_file() and str(file).startswith(str(dist_resolved)):
             return FileResponse(file)
         return FileResponse(DIST_DIR / "index.html")
+
 else:
     log.error("[frontend] DIST_DIR does not exist — app will show blank page!")

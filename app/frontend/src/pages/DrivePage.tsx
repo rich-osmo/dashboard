@@ -15,6 +15,7 @@ import { TimeAgo } from '../components/shared/TimeAgo';
 import { useFocusNavigation } from '../hooks/useFocusNavigation';
 import { KeyboardHints } from '../components/shared/KeyboardHints';
 import { InfiniteScrollSentinel } from '../components/shared/InfiniteScrollSentinel';
+import { openExternal } from '../api/client';
 
 const TABS = ['Files', 'Docs', 'Sheets'] as const;
 type Tab = (typeof TABS)[number];
@@ -148,7 +149,7 @@ function FilesTab() {
       if (items[i]) dismiss.mutate({ source: 'drive', item_id: items[i].id });
     },
     onOpen: (i) => {
-      if (items[i]?.web_view_link) window.open(items[i].web_view_link, '_blank');
+      if (items[i]?.web_view_link) openExternal(items[i].web_view_link);
     },
     onCreateIssue: (i) => {
       if (items[i]) createIssue.mutate({ title: items[i].name });
@@ -240,7 +241,7 @@ function FilesTab() {
                       alignItems: 'flex-start',
                       cursor: 'pointer',
                     }}
-                    onClick={() => window.open(file.web_view_link, '_blank')}
+                    onClick={() => openExternal(file.web_view_link)}
                   >
                     <div style={{ flexShrink: 0, paddingTop: '2px', display: 'flex', gap: 6, alignItems: 'center' }}>
                       {scoreBadge(file.priority_score)}
@@ -335,7 +336,7 @@ function FilesTab() {
                       alignItems: 'flex-start',
                       cursor: 'pointer',
                     }}
-                    onClick={() => window.open(file.web_view_link, '_blank')}
+                    onClick={() => openExternal(file.web_view_link)}
                   >
                     <div style={{ flexShrink: 0, paddingTop: '2px' }}>
                       <MimeIcon mime={file.mime_type} />
@@ -407,7 +408,7 @@ function DocsTab() {
   const { containerRef } = useFocusNavigation({
     selector: '.dashboard-item-row',
     onOpen: (i) => {
-      if (docs[i]?.web_view_link) window.open(docs[i].web_view_link, '_blank');
+      if (docs[i]?.web_view_link) openExternal(docs[i].web_view_link);
     },
     onExpand: (i) => {
       if (docs[i]) toggleExpand(docs[i].id);
@@ -449,7 +450,7 @@ function DocsTab() {
                   alignItems: 'flex-start',
                   cursor: 'pointer',
                 }}
-                onClick={() => window.open(doc.web_view_link, '_blank')}
+                onClick={() => openExternal(doc.web_view_link)}
               >
                 <div style={{ flexShrink: 0, paddingTop: '2px' }}>
                   <DocIcon />

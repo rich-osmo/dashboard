@@ -59,13 +59,14 @@ interface ClaudeTerminalProps {
   visible: boolean;
   overlayOpen?: boolean;
   personaId?: number;
+  sandboxId?: string;
   initialPrompt?: string;
   onConnected?: () => void;
   onDisconnected?: () => void;
 }
 
 export const ClaudeTerminal = forwardRef<ClaudeTerminalHandle, ClaudeTerminalProps>(
-  ({ visible, overlayOpen, personaId, initialPrompt, onConnected, onDisconnected }, ref) => {
+  ({ visible, overlayOpen, personaId, sandboxId, initialPrompt, onConnected, onDisconnected }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const termRef = useRef<Terminal | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
@@ -129,8 +130,11 @@ export const ClaudeTerminal = forwardRef<ClaudeTerminalHandle, ClaudeTerminalPro
 
       // WebSocket
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const params = personaId ? `?persona_id=${personaId}` : '';
-      const ws = new WebSocket(`${proto}//${location.host}/api/ws/claude${params}`);
+      const wsParams = new URLSearchParams();
+      if (personaId) wsParams.set('persona_id', String(personaId));
+      if (sandboxId) wsParams.set('sandbox_id', sandboxId);
+      const qs = wsParams.toString();
+      const ws = new WebSocket(`${proto}//${location.host}/api/ws/claude${qs ? `?${qs}` : ''}`);
       ws.binaryType = 'arraybuffer';
       wsRef.current = ws;
 

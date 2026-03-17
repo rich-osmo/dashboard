@@ -1,4 +1,4 @@
-.PHONY: start stop restart backend frontend status logs app build dev run test test-headed test-setup test-seed test-servers-start test-servers-stop test-status test-logs test-clean lint fmt blft dmg release db-migrate db-upgrade db-downgrade db-current db-history db-revision whatsapp whatsapp-stop setup ship demo demo-seed demo-backend demo-frontend demo-reset demo-capture
+.PHONY: start stop restart backend frontend status logs app build dev run test test-headed test-setup test-seed test-servers-start test-servers-stop test-status test-logs test-clean lint fmt blft verify dmg release db-migrate db-upgrade db-downgrade db-current db-history db-revision whatsapp whatsapp-stop setup ship demo demo-seed demo-backend demo-frontend demo-reset demo-capture
 
 BACKEND_DIR = app/backend
 FRONTEND_DIR = app/frontend
@@ -117,6 +117,8 @@ fmt:
 
 blft: build lint fmt test
 
+verify: build lint fmt test
+
 # --- DMG packaging ---
 
 dmg:
@@ -177,8 +179,8 @@ test-servers-start:
 		|| (echo "Test frontend failed — check /tmp/dashboard-test-frontend.log" && exit 1)
 
 test-servers-stop:
-	@lsof -ti:$(TEST_BACKEND_PORT) | xargs kill -9 2>/dev/null && echo "Test backend stopped" || true
-	@lsof -ti:$(TEST_FRONTEND_PORT) | xargs kill -9 2>/dev/null && echo "Test frontend stopped" || true
+	@lsof -ti:$(TEST_BACKEND_PORT) | xargs kill 2>/dev/null && echo "Test backend stopped" || true
+	@lsof -ti:$(TEST_FRONTEND_PORT) | xargs kill 2>/dev/null && echo "Test frontend stopped" || true
 
 test-status:
 	@echo "Test backend:  $$(lsof -ti:$(TEST_BACKEND_PORT) > /dev/null 2>&1 && echo 'running on :$(TEST_BACKEND_PORT)' || echo 'stopped')"

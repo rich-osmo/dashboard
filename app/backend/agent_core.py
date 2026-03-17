@@ -379,6 +379,75 @@ TOOLS = [
             "required": ["person_id", "content"],
         },
     },
+    # --- Sandbox tools ---
+    {
+        "name": "list_sandbox_apps",
+        "description": "List all sandbox apps. Returns id, name, description, files list, and timestamps for each app.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "create_sandbox_app",
+        "description": (
+            "Create a new sandbox app. Returns the new app with its id, which you'll need for file operations. "
+            "The app starts with a template index.html."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "App name (will be slugified for the ID)"},
+                "description": {"type": "string", "description": "Brief description of the app"},
+            },
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "read_sandbox_file",
+        "description": (
+            "Read the text content of a file in a sandbox app. "
+            "Use list_sandbox_apps first to find the app_id and file names."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "app_id": {"type": "string", "description": "Sandbox app ID (slug)"},
+                "file_path": {
+                    "type": "string",
+                    "description": "File path relative to app root (e.g. 'index.html', 'js/app.js')",
+                },
+            },
+            "required": ["app_id", "file_path"],
+        },
+    },
+    {
+        "name": "write_sandbox_file",
+        "description": (
+            "Write or overwrite a file in a sandbox app. Creates parent directories as needed. "
+            "Use this to build HTML/CSS/JS apps. Cannot write to manifest.json."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "app_id": {"type": "string", "description": "Sandbox app ID (slug)"},
+                "file_path": {
+                    "type": "string",
+                    "description": "File path relative to app root (e.g. 'index.html', 'style.css')",
+                },
+                "content": {"type": "string", "description": "Full file content to write"},
+            },
+            "required": ["app_id", "file_path", "content"],
+        },
+    },
+    {
+        "name": "delete_sandbox_app",
+        "description": "Delete a sandbox app and all its files. This cannot be undone.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "app_id": {"type": "string", "description": "Sandbox app ID (slug) to delete"},
+            },
+            "required": ["app_id"],
+        },
+    },
 ]
 
 
@@ -528,6 +597,28 @@ async def execute_tool(name: str, tool_input: dict) -> str:
                 if "title" in tool_input:
                     body["title"] = tool_input["title"]
                 r = await client.post(f"/api/people/{person_id}/one-on-one-notes", json=body)
+            # --- Sandbox tools ---
+            elif name == "list_sandbox_apps":
+                r = await client.get("/api/sandbox/apps")
+            elif name == "create_sandbox_app":
+                body = {"name": tool_input["name"]}
+                if "description" in tool_input:
+                    body["description"] = tool_input["description"]
+                r = await client.post("/api/sandbox/apps", json=body)
+            elif name == "read_sandbox_file":
+                r = await client.get(f"/api/sandbox/apps/{tool_input['app_id']}/files/{tool_input['file_path']}")
+                # serve_file returns raw content (not JSON), handle directly
+                text = r.text
+                if len(text) > 8000:
+                    text = text[:8000] + "\n... (truncated)"
+                return text
+            elif name == "write_sandbox_file":
+                r = await client.put(
+                    f"/api/sandbox/apps/{tool_input['app_id']}/files/{tool_input['file_path']}",
+                    json={"content": tool_input["content"]},
+                )
+            elif name == "delete_sandbox_app":
+                r = await client.delete(f"/api/sandbox/apps/{tool_input['app_id']}")
             else:
                 return json.dumps({"error": f"Unknown tool: {name}"})
 
@@ -621,7 +712,8 @@ def build_system_prompt(channel_instructions: str = "") -> str:
         "5. If the user asks about a person, topic, event, or anything factual — LOOK IT UP. "
         "Do not rely on conversation history alone if the data might have changed.\n"
         "6. You can CREATE and UPDATE local dashboard data: notes, thoughts, 1:1 agenda items, "
-        "issues, longform drafts, and 1:1 meeting notes. You CANNOT send emails, Slack messages, "
+        "issues, longform drafts, 1:1 meeting notes, and sandbox apps. You can also read and write "
+        "files in sandbox apps to build mini web apps. You CANNOT send emails, Slack messages, "
         "or create calendar events — those require the user to act directly in the dashboard.\n"
         "7. When creating items, confirm what you created with key details (ID, title, linked person).\n"
         "8. When closing items, use get_notes or get_issues first to find the correct ID, then update.\n"

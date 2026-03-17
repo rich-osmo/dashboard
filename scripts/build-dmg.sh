@@ -51,6 +51,10 @@ fi
 
 echo "--- App bundle created: dist/${APP_NAME}.app ---"
 
+# 4.5. Ad-hoc code sign (avoids "app is damaged" Gatekeeper errors)
+echo "--- Signing app bundle ---"
+codesign --force --deep --sign - "dist/${APP_NAME}.app"
+
 # 5. Create DMG
 echo "--- Creating DMG ---"
 # Remove any previous DMG with the same name

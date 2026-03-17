@@ -64,6 +64,7 @@ import type {
   WhatsAppQR,
   AgentConversation,
   AgentMessage,
+  SandboxApp,
 } from './types';
 
 export function usePeople(filters?: { is_coworker?: boolean; group?: string }) {
@@ -1852,6 +1853,50 @@ export function useSaveAgentConversation() {
       api.post<AgentConversation>(`/agent/conversations/${id}/save`, title ? { title } : {}),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['agent-conversations'] });
+    },
+  });
+}
+
+// --- Sandbox ---
+
+export function useSandboxApps() {
+  return useQuery({
+    queryKey: ['sandbox-apps'],
+    queryFn: () => api.get<SandboxApp[]>('/sandbox/apps'),
+  });
+}
+
+export function useCreateSandboxApp() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { name: string; description?: string }) =>
+      api.post<SandboxApp>('/sandbox/apps', data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sandbox-apps'] });
+    },
+  });
+}
+
+export function useRenameSandboxApp() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...update }: { id: string; name?: string; description?: string }) =>
+      api.patch<SandboxApp>(`/sandbox/apps/${id}`, update),
+    onSuccess: (updated, { id: oldId }) => {
+      qc.setQueryData<SandboxApp[]>(['sandbox-apps'], (old) =>
+        old?.map((a) => (a.id === oldId ? updated : a)),
+      );
+      qc.invalidateQueries({ queryKey: ['sandbox-apps'] });
+    },
+  });
+}
+
+export function useDeleteSandboxApp() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/sandbox/apps/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sandbox-apps'] });
     },
   });
 }
