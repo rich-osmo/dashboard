@@ -13,9 +13,9 @@ logger = logging.getLogger(__name__)
 
 # Default models per provider
 DEFAULT_MODELS = {
-    "gemini": "gemini-3-flash-preview",
-    "anthropic": "claude-sonnet-4-6-20250627",
-    "openai": "gpt-5-mini",
+    "gemini": "gemini-2.0-flash",
+    "anthropic": "claude-sonnet-4-5",
+    "openai": "gpt-5.4-mini",
 }
 
 # Secret key per provider
@@ -26,13 +26,22 @@ SECRET_KEYS = {
 }
 
 
-def _get_provider_and_model() -> tuple[str, str]:
-    """Read provider and model from profile, with defaults."""
+def _get_provider_and_model(purpose: str = "ranking") -> tuple[str, str]:
+    """Read provider and model from profile, with defaults.
+
+    purpose="agent"   → uses agent_provider / agent_model (falls back to ai_provider / ai_model)
+    purpose="ranking" → uses ai_provider / ai_model
+    """
     profile = get_profile()
-    provider = (profile.get("ai_provider") or "gemini").strip().lower()
+    if purpose == "agent":
+        provider = (profile.get("agent_provider") or profile.get("ai_provider") or "gemini").strip().lower()
+        model = (profile.get("agent_model") or "").strip()
+    else:
+        provider = (profile.get("ai_provider") or "gemini").strip().lower()
+        model = (profile.get("ai_model") or "").strip()
     if provider not in DEFAULT_MODELS:
         provider = "gemini"
-    model = (profile.get("ai_model") or "").strip() or DEFAULT_MODELS[provider]
+    model = model or DEFAULT_MODELS[provider]
     return provider, model
 
 
@@ -144,7 +153,7 @@ def _generate_openai(
             {"role": "user", "content": user_message},
         ],
         "temperature": temperature,
-        "max_tokens": 4096,
+        "max_completion_tokens": 4096,
     }
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
@@ -185,7 +194,7 @@ async def generate_chat(
     Messages format: [{"role": "user"|"assistant", "content": str|list}, ...]
     Tools format: Anthropic-style tool definitions (name, description, input_schema).
     """
-    provider, model = _get_provider_and_model()
+    provider, model = _get_provider_and_model(purpose="agent")
     api_key = _get_api_key(provider)
     if not api_key:
         return ChatResponse(text="AI not configured — set an API key in Settings.")
@@ -320,7 +329,7 @@ async def _chat_openai(
         "model": model,
         "messages": oai_messages,
         "temperature": temperature,
-        "max_tokens": 2048,
+        "max_completion_tokens": 2048,
     }
     if oai_tools:
         kwargs["tools"] = oai_tools

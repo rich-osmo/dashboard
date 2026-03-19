@@ -1,13 +1,17 @@
 """Live GitHub API endpoints for PR browsing and repo search."""
 
+import json
 import logging
+from datetime import datetime
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 
+from app_config import get_prompt_context
 from config import get_github_repo
-from database import get_db_connection
+from database import get_db_connection, get_write_db
+from routers._ranking_cache import compute_items_hash
 
 logger = logging.getLogger(__name__)
 
@@ -342,3 +346,197 @@ def search_code(
     except Exception as e:
         logger.error("GitHub code search failed: %s", e)
         raise HTTPException(status_code=500, detail="GitHub code search failed")
+
+
+# ---------------------------------------------------------------------------
+# AI prioritization
+# ---------------------------------------------------------------------------
+
+
+def _build_github_rank_prompt() -> str:
+    ctx = get_prompt_context()
+    return f"""\
+You are a priority-ranking assistant {ctx}. You will receive a list of open \
+GitHub pull requests. Your job is to rank them by importance for the user to act on.
+
+For each PR, assign a priority_score from 1-10 where:
+- 10: Needs immediate attention (review explicitly requested from user, hotfix/production PRs)
+- 8-9: High priority (from direct reports or executives, critical/blocking labels, PRs awaiting your approval)
+- 5-7: Medium priority (active discussion, recently updated feature PRs with engagement)
+- 1-4: Low priority (draft PRs, dormant PRs, bot-authored PRs like dependabot/renovate, docs-only changes)
+
+Consider:
+1. Review-requested PRs addressed to the user are highest priority
+2. PRs authored by direct reports or executives matter more
+3. Labels like "critical", "blocking", "hotfix", "p0" signal urgency
+4. Draft PRs are almost always low priority
+5. Bot-authored PRs (dependabot, renovate, etc.) are low unless they are security updates
+6. Recency: recently updated PRs are more actionable than dormant ones
+
+Return ONLY valid JSON — an array of objects with these keys:
+  id (the PR number as a string), priority_score (integer 1-10), reason (one short sentence)
+Order by priority_score descending. Include ALL PRs provided."""
+
+
+def _rank_github_with_gemini(prs: list[dict]) -> list[dict]:
+    from ai_client import generate
+
+    now = datetime.now().strftime("%A, %B %d %Y, %I:%M %p")
+    user_message = f"Current time: {now}\n\nGitHub PRs to rank:\n{json.dumps(prs, default=str)}"
+    text = generate(system_prompt=_build_github_rank_prompt(), user_message=user_message, json_mode=True)
+    if not text:
+        return []
+    try:
+        result = json.loads(text)
+        if isinstance(result, list):
+            return result
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return []
+
+
+def _do_rerank_github() -> bool:
+    with get_db_connection(readonly=True) as db:
+        rows = db.execute(
+            "SELECT number, title, state, draft, author, html_url, head_ref, base_ref, "
+            "labels_json, requested_reviewers_json, review_requested, "
+            "additions, deletions, changed_files, updated_at "
+            "FROM github_pull_requests WHERE state = 'open' ORDER BY updated_at DESC LIMIT 100"
+        ).fetchall()
+
+    if not rows:
+        logger.info("GitHub rerank — no open PRs in DB")
+        return False
+
+    prs_for_llm = []
+    for r in rows:
+        prs_for_llm.append(
+            {
+                "id": str(r["number"]),
+                "title": r["title"],
+                "author": r["author"],
+                "draft": bool(r["draft"]),
+                "head_ref": r["head_ref"],
+                "base_ref": r["base_ref"],
+                "labels": json.loads(r["labels_json"] or "[]"),
+                "requested_reviewers": json.loads(r["requested_reviewers_json"] or "[]"),
+                "review_requested": bool(r["review_requested"]),
+                "additions": r["additions"],
+                "deletions": r["deletions"],
+                "changed_files": r["changed_files"],
+                "updated_at": r["updated_at"],
+            }
+        )
+
+    items_hash = compute_items_hash(prs_for_llm)
+    with get_db_connection(readonly=True) as db:
+        cached = db.execute("SELECT data_hash FROM cached_github_priorities ORDER BY id DESC LIMIT 1").fetchone()
+        if cached and cached["data_hash"] == items_hash:
+            logger.info("GitHub rerank — cache still valid")
+            return False
+
+    logger.info("GitHub rerank — calling AI (%d PRs)", len(prs_for_llm))
+    try:
+        ranked = _rank_github_with_gemini(prs_for_llm)
+    except Exception as e:
+        logger.error("GitHub rerank failed: %s", e)
+        return False
+
+    pr_lookup = {str(r["number"]): dict(r) for r in rows}
+    items = []
+    for rank in ranked:
+        pr_id = str(rank.get("id", ""))
+        pr = pr_lookup.get(pr_id)
+        if not pr:
+            continue
+        items.append(
+            {
+                "id": pr_id,
+                "number": int(pr_id),
+                "title": pr["title"],
+                "author": pr["author"],
+                "draft": bool(pr["draft"]),
+                "head_ref": pr["head_ref"],
+                "base_ref": pr["base_ref"],
+                "labels": json.loads(pr["labels_json"] or "[]"),
+                "requested_reviewers": json.loads(pr["requested_reviewers_json"] or "[]"),
+                "review_requested": bool(pr["review_requested"]),
+                "updated_at": pr["updated_at"],
+                "html_url": pr["html_url"],
+                "priority_score": rank.get("priority_score", 5),
+                "priority_reason": rank.get("reason", ""),
+            }
+        )
+
+    items.sort(key=lambda x: x["priority_score"], reverse=True)
+
+    if not items:
+        logger.warning("GitHub rerank produced 0 items — not caching")
+        return False
+
+    result = {"items": items}
+    with get_write_db() as db:
+        db.execute("DELETE FROM cached_github_priorities")
+        db.execute(
+            "INSERT INTO cached_github_priorities (data_json, data_hash) VALUES (?, ?)",
+            (json.dumps(result), items_hash),
+        )
+        db.commit()
+
+    logger.info("GitHub rerank complete — %d items cached", len(items))
+    return True
+
+
+def rerank_github() -> bool:
+    """Rerank GitHub PRs — updates cache if data changed. Returns True if cache was updated."""
+    from routers._ranking_cache import finish_reranking, start_reranking
+
+    if not start_reranking("github"):
+        return False
+    try:
+        return _do_rerank_github()
+    finally:
+        finish_reranking("github")
+
+
+@router.get("/prioritized")
+def get_prioritized_github(
+    refresh: bool = Query(False),
+    background_tasks: BackgroundTasks = None,
+):
+    """Return open GitHub PRs ranked by AI priority score (0-10)."""
+    from routers._ranking_cache import is_reranking
+
+    with get_db_connection(readonly=True) as db:
+        dismissed_rows = db.execute("SELECT item_id FROM dismissed_dashboard_items WHERE source = 'github'").fetchall()
+        dismissed = {r["item_id"] for r in dismissed_rows}
+        cached = db.execute(
+            "SELECT data_json, generated_at FROM cached_github_priorities ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+
+    if cached:
+        data = json.loads(cached["data_json"])
+        data["items"] = [item for item in data.get("items", []) if str(item.get("number", "")) not in dismissed]
+
+        if not refresh:
+            return data
+
+        # Stale-while-revalidate: return current cache, rerank in background
+        if background_tasks and not is_reranking("github"):
+            background_tasks.add_task(rerank_github)
+        data["stale"] = True
+        return data
+
+    # No cache — synchronous first-time ranking
+    updated = _do_rerank_github()
+    if not updated:
+        return {"items": [], "error": "No open GitHub PRs synced yet. Run a sync first."}
+
+    with get_db_connection(readonly=True) as db:
+        cached = db.execute("SELECT data_json FROM cached_github_priorities ORDER BY id DESC LIMIT 1").fetchone()
+        if cached:
+            data = json.loads(cached["data_json"])
+            data["items"] = [i for i in data.get("items", []) if str(i.get("number", "")) not in dismissed]
+            return data
+
+    return {"items": []}

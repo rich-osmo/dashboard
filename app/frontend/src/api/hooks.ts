@@ -25,6 +25,7 @@ import type {
   GitHubPullRequestDetail,
   GitHubSearchResult,
   GitHubCodeSearchResult,
+  PrioritizedGitHubData,
   MeetingNote,
   MeetingsResponse,
   SlackMessage,
@@ -1828,6 +1829,28 @@ export function useAllGitHub() {
     initialPageParam: 0,
     getNextPageParam: (lastPage) =>
       lastPage.has_more ? lastPage.offset + lastPage.limit : undefined,
+  });
+}
+
+export function usePrioritizedGitHub() {
+  return useQuery({
+    queryKey: ['github-prioritized'],
+    queryFn: () => api.get<PrioritizedGitHubData>('/github/prioritized'),
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
+export function useRefreshPrioritizedGitHub() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.get<PrioritizedGitHubData>('/github/prioritized?refresh=true'),
+    onSuccess: (data) => {
+      qc.setQueryData<PrioritizedGitHubData>(['github-prioritized'], data);
+      if (data.stale) {
+        setTimeout(() => qc.invalidateQueries({ queryKey: ['github-prioritized'] }), 3000);
+        setTimeout(() => qc.invalidateQueries({ queryKey: ['github-prioritized'] }), 8000);
+      }
+    },
   });
 }
 

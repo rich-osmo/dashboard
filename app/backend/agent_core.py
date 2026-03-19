@@ -448,6 +448,41 @@ TOOLS = [
             "required": ["app_id"],
         },
     },
+    # --- Shell & web tools ---
+    {
+        "name": "bash",
+        "description": (
+            "Run a read-only bash command and return its output. "
+            "Use for: current time/date (`date`), file reads (`cat`, `ls`), "
+            "gh CLI queries (`gh pr list`, `gh issue list`), "
+            "system info (`df -h`, `ps aux`, `env`), grep/find, and similar. "
+            "Scripting interpreters (python, node, ruby, perl, etc.), sub-shells (bash, zsh), "
+            "and write operations (rm, mv, cp, sudo, git commit/push, redirections, etc.) are blocked."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "command": {"type": "string", "description": "The bash command to run (read-only)"},
+                "timeout": {"type": "integer", "description": "Timeout in seconds (default 30, max 120)"},
+            },
+            "required": ["command"],
+        },
+    },
+    {
+        "name": "web_fetch",
+        "description": (
+            "Fetch a URL and return its readable text content. "
+            "Use to read articles, documentation, GitHub pages, or any URL the user provides."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "The URL to fetch"},
+                "max_chars": {"type": "integer", "description": "Max characters to return (default 8000)"},
+            },
+            "required": ["url"],
+        },
+    },
 ]
 
 
@@ -502,6 +537,79 @@ async def execute_tool(name: str, tool_input: dict) -> str:
                 if "variables" in tool_input:
                     body["variables"] = tool_input["variables"]
                 r = await client.post("/graphql", json=body)
+            elif name == "bash":
+                import subprocess
+
+                cmd = tool_input["command"]
+                timeout = min(tool_input.get("timeout", 30), 120)
+                # Block output redirection and common write/destructive commands
+                if re.search(r"(?:^|[\s;|&])>+\s*\S", cmd):
+                    return '{"error": "Output redirection (> and >>) is not allowed"}'
+                _bash_blocked = re.compile(
+                    r"\b(rm|rmdir|mv|cp|mkdir|touch|chmod|chown|chflags"
+                    r"|truncate|shred|dd|mkfs|fdisk|diskutil"
+                    r"|sudo|su|kill|killall|pkill"
+                    r"|reboot|shutdown|halt|poweroff|wget|tee"
+                    # Scripting interpreters bypass all shell-level restrictions via stdlib
+                    r"|python|python3|pypy|pypy3"
+                    r"|node|nodejs|ruby|perl|php|lua|julia|Rscript"
+                    # Sub-shell spawning
+                    r"|bash|zsh|fish|ksh|csh|tcsh|dash)\b"
+                    r"|pip\s+(install|uninstall)"
+                    r"|npm\s+(install|uninstall|i\b|ci\b)"
+                    r"|yarn\s+(add|remove|install)"
+                    r"|brew\s+(install|uninstall)"
+                    r"|git\s+(commit|push|add|merge|rebase|clean)\b"
+                    r"|git\s+reset\b"
+                    r"|git\s+branch\s+-[dD]"
+                    r"|git\s+stash\s+(pop|drop|clear)",
+                    re.IGNORECASE,
+                )
+                if _bash_blocked.search(cmd):
+                    return (
+                        '{"error": "Command contains a disallowed operation. Only read-only commands are permitted."}'
+                    )
+                if re.search(
+                    r"\bcurl\b.+(-X\s*(POST|PUT|DELETE|PATCH)|--data\b|-d\s|--upload-file\b|-T\s|-F\s)",
+                    cmd,
+                    re.IGNORECASE | re.DOTALL,
+                ):
+                    return '{"error": "curl with mutating HTTP methods is not allowed"}'
+                try:
+                    result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
+                    out = result.stdout
+                    if result.stderr.strip():
+                        out += f"\nSTDERR: {result.stderr.strip()}"
+                    out = out.strip() or "(no output)"
+                    if len(out) > 8000:
+                        out = out[:8000] + "\n... (truncated)"
+                    return out
+                except subprocess.TimeoutExpired:
+                    return f'{{"error": "Command timed out after {timeout}s"}}'
+            elif name == "web_fetch":
+                url = tool_input["url"]
+                max_chars = tool_input.get("max_chars", 8000)
+                try:
+                    resp = await httpx.AsyncClient(timeout=15, follow_redirects=True).get(
+                        url, headers={"User-Agent": "Mozilla/5.0"}
+                    )
+                    resp.raise_for_status()
+                    ct = resp.headers.get("content-type", "")
+                    if "html" in ct:
+                        try:
+                            from trafilatura import extract
+
+                            text = extract(resp.text) or resp.text
+                        except ImportError:
+                            text = resp.text
+                    else:
+                        text = resp.text
+                    text = text.strip()
+                    if len(text) > max_chars:
+                        text = text[:max_chars] + "\n... (truncated)"
+                    return text or "(empty response)"
+                except Exception as exc:
+                    return json.dumps({"error": f"fetch failed: {exc}"})
             elif name == "query_database":
                 sql = tool_input.get("sql", "").strip()
                 sql_upper = sql.upper()
@@ -715,6 +823,11 @@ def build_system_prompt(channel_instructions: str = "") -> str:
         "issues, longform drafts, 1:1 meeting notes, and sandbox apps. You can also read and write "
         "files in sandbox apps to build mini web apps. You CANNOT send emails, Slack messages, "
         "or create calendar events — those require the user to act directly in the dashboard.\n"
+        "6b. Use the bash tool for: current time (`date`), file reads, `gh` CLI queries, "
+        "and other read-only shell operations. "
+        "Only read-only commands are permitted — writes, deletes, installs, mutations, "
+        "and scripting interpreters (python, node, ruby, etc.) are blocked. "
+        "Use web_fetch to read any URL the user provides (articles, docs, GitHub pages, etc.).\n"
         "7. When creating items, confirm what you created with key details (ID, title, linked person).\n"
         "8. When closing items, use get_notes or get_issues first to find the correct ID, then update.\n"
         "9. NEVER include raw API keys, tokens, passwords, or secrets in your responses.\n"

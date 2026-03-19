@@ -37,6 +37,8 @@ class ProfileUpdate(BaseModel):
     whatsapp_phone: str | None = None
     ai_provider: str | None = None
     ai_model: str | None = None
+    agent_provider: str | None = None
+    agent_model: str | None = None
     auto_sync_interval_seconds: int | None = None
 
 

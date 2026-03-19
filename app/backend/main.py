@@ -198,15 +198,16 @@ def frontend_errors(body: dict):
 
 @app.post("/api/open-url")
 def open_url(body: dict):
-    """Open a URL in the system default browser (used by pywebview native app)."""
-    import webbrowser
+    """Open a URL in the system default browser or registered URL handler (used by pywebview native app)."""
+    import subprocess
     from urllib.parse import urlparse
 
     url = body.get("url", "")
     if url:
         parsed = urlparse(url)
-        if parsed.scheme in ("http", "https") and parsed.netloc:
-            webbrowser.open(url)
+        allowed_schemes = ("http", "https", "obsidian")
+        if parsed.scheme in allowed_schemes:
+            subprocess.Popen(["open", url])
             return {"status": "ok"}
     return {"status": "invalid_url"}
 

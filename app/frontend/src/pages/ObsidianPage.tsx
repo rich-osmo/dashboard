@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { usePrioritizedObsidian, useRefreshPrioritizedObsidian, useAllObsidian, useObsidianVault } from '../api/hooks';
+import { openExternal } from '../api/client';
 import { TimeAgo } from '../components/shared/TimeAgo';
 import { PrioritizedSourceList, ScoreBadge } from '../components/shared/PrioritizedSourceList';
 import { ObsidianNoteModal } from '../components/ObsidianNoteModal';
@@ -16,7 +17,10 @@ export function ObsidianPage() {
   const { data: vaultConfig } = useObsidianVault();
   const vaultName = vaultConfig?.active_path ? vaultConfig.active_path.split('/').pop() ?? '' : '';
   const refresh = useRefreshPrioritizedObsidian(days);
-  const [selectedNote, setSelectedNote] = useState<{ id: string; title: string; relativePath: string } | null>(null);
+  const [selectedNote, setSelectedNote] = useState<{
+    id: string; title: string; relativePath: string;
+    folder?: string | null; modifiedTime?: string; wordCount?: number; contentPreview?: string | null;
+  } | null>(null);
 
   const allQuery = useAllObsidian();
   const allNotes = useMemo(() => allQuery.data?.pages.flatMap(p => p.items) ?? [], [allQuery.data]);
@@ -37,7 +41,7 @@ export function ObsidianPage() {
         itemNoun="note"
         dayOptions={[30, 90, 365]}
         getIssueTitle={(note) => note.title}
-        onOpen={(note) => setSelectedNote({ id: note.id, title: note.title, relativePath: note.relative_path })}
+        onOpen={(note) => setSelectedNote({ id: note.id, title: note.title, relativePath: note.relative_path, folder: note.folder, modifiedTime: note.modified_time, wordCount: note.word_count, contentPreview: note.content_preview })}
         errorMessage={<p className="empty-state">Obsidian is not connected. Enable the Obsidian connector in <Link to="/settings">Settings</Link> and sync to see your notes.</p>}
         renderItem={(note, expanded) => (
           <div
@@ -53,7 +57,7 @@ export function ObsidianPage() {
                   href={obsidianUri(note.relative_path, vaultName)}
                   className="dashboard-item-meta"
                   style={{ fontSize: 'var(--text-xs)', opacity: 0.6, flexShrink: 0 }}
-                  onClick={(e) => { e.stopPropagation(); window.location.href = obsidianUri(note.relative_path, vaultName); e.preventDefault(); }}
+                  onClick={(e) => { e.stopPropagation(); e.preventDefault(); openExternal(obsidianUri(note.relative_path, vaultName)); }}
                   title="Open in Obsidian"
                 >
                   open ↗
@@ -96,7 +100,7 @@ export function ObsidianPage() {
               <div
                 className="dashboard-item dashboard-item-link"
                 style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'flex-start', cursor: 'pointer' }}
-                onClick={() => setSelectedNote({ id: note.id, title: note.title, relativePath: note.relative_path })}
+                onClick={() => setSelectedNote({ id: note.id, title: note.title, relativePath: note.relative_path, folder: note.folder, modifiedTime: note.modified_time, wordCount: note.word_count, contentPreview: note.content_preview })}
               >
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="dashboard-item-title" style={{ display: 'flex', alignItems: 'baseline', gap: 'var(--space-sm)', flexWrap: 'wrap' }}>
@@ -105,7 +109,7 @@ export function ObsidianPage() {
                       href={obsidianUri(note.relative_path, vaultName)}
                       className="dashboard-item-meta"
                       style={{ fontSize: 'var(--text-xs)', opacity: 0.6, flexShrink: 0 }}
-                      onClick={(e) => { e.stopPropagation(); window.location.href = obsidianUri(note.relative_path, vaultName); e.preventDefault(); }}
+                      onClick={(e) => { e.stopPropagation(); e.preventDefault(); openExternal(obsidianUri(note.relative_path, vaultName)); }}
                       title="Open in Obsidian"
                     >
                       open ↗
@@ -130,6 +134,10 @@ export function ObsidianPage() {
           noteId={selectedNote.id}
           title={selectedNote.title}
           relativePath={selectedNote.relativePath}
+          folder={selectedNote.folder}
+          modifiedTime={selectedNote.modifiedTime}
+          wordCount={selectedNote.wordCount}
+          contentPreview={selectedNote.contentPreview}
           onClose={() => setSelectedNote(null)}
         />
       )}

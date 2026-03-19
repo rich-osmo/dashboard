@@ -1,22 +1,29 @@
 import { useEffect, useRef } from 'react';
-import { useObsidianNote } from '../api/hooks';
+import { useObsidianNote, useObsidianVault } from '../api/hooks';
 import { TimeAgo } from './shared/TimeAgo';
 import { MarkdownRenderer } from './shared/MarkdownRenderer';
+import { openExternal } from '../api/client';
 
 interface Props {
   noteId: string;
   title: string;
   relativePath: string;
+  folder?: string | null;
+  modifiedTime?: string;
+  wordCount?: number;
+  contentPreview?: string | null;
   onClose: () => void;
 }
 
-function obsidianUri(relativePath: string): string {
+function obsidianUri(relativePath: string, vaultName: string): string {
   const file = encodeURIComponent(relativePath.replace(/\.md$/, ''));
-  return `obsidian://open?vault=rich&file=${file}`;
+  return `obsidian://open?vault=${encodeURIComponent(vaultName)}&file=${file}`;
 }
 
-export function ObsidianNoteModal({ noteId, title, relativePath, onClose }: Props) {
-  const { data, isLoading } = useObsidianNote(noteId);
+export function ObsidianNoteModal({ noteId, title, relativePath, folder, modifiedTime, wordCount, contentPreview, onClose }: Props) {
+  const { data, isLoading, isError } = useObsidianNote(noteId);
+  const { data: vaultConfig } = useObsidianVault();
+  const vaultName = vaultConfig?.active_path ? vaultConfig.active_path.split('/').pop() ?? '' : '';
   const overlayRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -26,6 +33,11 @@ export function ObsidianNoteModal({ noteId, title, relativePath, onClose }: Prop
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
   }, [onClose]);
+
+  // Use fetched data when available, fall back to props passed from the list
+  const displayFolder = data?.folder ?? folder;
+  const displayModifiedTime = data?.modified_time ?? modifiedTime;
+  const displayWordCount = data?.word_count ?? wordCount;
 
   const tags = data?.tags ? data.tags.split(', ').filter(Boolean) : [];
   const wikiLinks = data?.wiki_links ? data.wiki_links.split(', ').filter(Boolean) : [];
@@ -42,14 +54,14 @@ export function ObsidianNoteModal({ noteId, title, relativePath, onClose }: Prop
         <div className="meeting-modal-header">
           <h2>{title}</h2>
           <div style={{ color: 'var(--color-text-light)', fontSize: 'var(--text-sm)', display: 'flex', gap: 'var(--space-md)', flexWrap: 'wrap', alignItems: 'center' }}>
-            {data?.folder && <span>{data.folder}</span>}
-            {data?.modified_time && <TimeAgo date={data.modified_time} />}
-            {data?.word_count ? <span>{data.word_count.toLocaleString()} words</span> : null}
+            {displayFolder && <span>{displayFolder}</span>}
+            {displayModifiedTime && <TimeAgo date={displayModifiedTime} />}
+            {displayWordCount ? <span>{displayWordCount.toLocaleString()} words</span> : null}
             <a
-              href={obsidianUri(relativePath)}
+              href={obsidianUri(relativePath, vaultName)}
               onClick={(e) => {
                 e.preventDefault();
-                window.location.href = obsidianUri(relativePath);
+                openExternal(obsidianUri(relativePath, vaultName));
               }}
             >
               Open in Obsidian ↗
@@ -64,9 +76,17 @@ export function ObsidianNoteModal({ noteId, title, relativePath, onClose }: Prop
 
         {isLoading && <p className="empty-state">Loading note...</p>}
 
-        {data?.content && (
+        {isError && <p className="empty-state">Failed to load note content.</p>}
+
+        {!isLoading && !isError && data?.content && (
           <div className="meeting-modal-section">
             <MarkdownRenderer content={data.content} />
+          </div>
+        )}
+
+        {!isLoading && !isError && !data?.content && contentPreview && (
+          <div className="meeting-modal-section" style={{ color: 'var(--color-text-light)' }}>
+            {contentPreview}
           </div>
         )}
 

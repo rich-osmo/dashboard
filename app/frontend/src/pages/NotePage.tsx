@@ -1,17 +1,14 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useState, useRef, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   useNotes,
   useCreateNote,
   useUpdateNote,
   useDeleteNote,
-  useIssues,
   useCreateIssue,
-  useUpdateIssue,
-  useDeleteIssue,
   usePeople,
 } from '../api/hooks';
-import type { Note, Issue } from '../api/types';
+import type { Note } from '../api/types';
 import { detectEmployees } from '../utils/detectEmployees';
 import { parseIssuePrefix } from '../utils/parseIssuePrefix';
 import { useMentionAutocomplete } from '../hooks/useMentionAutocomplete';
@@ -22,13 +19,13 @@ function isThought(note: Note): boolean {
   return note.text.startsWith('[t]') || note.text.startsWith('[T]');
 }
 
-function stripNotePrefix(text: string): { displayText: string; isThoughtNote: boolean; isOneOnOnePrefix: boolean } {
+function stripNotePrefix(text: string): { displayText: string; isOneOnOnePrefix: boolean } {
   const isThoughtNote = /^\[[tT]\]\s*/.test(text);
   const isOneOnOnePrefix = /^\[1\]\s*/.test(text);
   let displayText = text;
   if (isThoughtNote) displayText = text.replace(/^\[[tT]\]\s*/, '');
   else if (isOneOnOnePrefix) displayText = text.replace(/^\[1\]\s*/, '');
-  return { displayText, isThoughtNote, isOneOnOnePrefix };
+  return { displayText, isOneOnOnePrefix };
 }
 
 function NoteItem({
@@ -47,7 +44,7 @@ function NoteItem({
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState(note.text);
   const editRef = useRef<HTMLInputElement>(null);
-  const { displayText, isThoughtNote, isOneOnOnePrefix } = stripNotePrefix(note.text);
+  const { displayText, isOneOnOnePrefix } = stripNotePrefix(note.text);
 
   useEffect(() => {
     if (editing) editRef.current?.focus();
@@ -87,7 +84,6 @@ function NoteItem({
           />
         ) : (
           <div onDoubleClick={() => { setEditText(note.text); setEditing(true); }} style={{ cursor: 'text' }}>
-            {isThoughtNote && <span className="note-type-indicator thought">~</span>}
             {displayText}
           </div>
         )}
@@ -130,14 +126,10 @@ export function NotePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { data: notes, isLoading } = useNotes({ status: statusFilter || undefined });
   const { data: employees } = usePeople();
-  const issueStatusFilter = statusFilter === 'done' ? 'done' : statusFilter === 'open' ? 'open' : undefined;
-  const { data: issues } = useIssues({ status: issueStatusFilter });
   const createNote = useCreateNote();
   const createIssue = useCreateIssue();
   const updateNote = useUpdateNote();
   const deleteNote = useDeleteNote();
-  const updateIssue = useUpdateIssue();
-  const deleteIssue = useDeleteIssue();
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const mention = useMentionAutocomplete(employees);
@@ -211,8 +203,10 @@ export function NotePage() {
       return;
     }
 
+    const raw = text.trim();
+    const prefixed = /^\[[tT1i]\]/.test(raw) ? raw : `[t] ${raw}`;
     createNote.mutate({
-      text: text.trim(),
+      text: prefixed,
       person_ids: detected.employees.map((e) => e.id),
       is_one_on_one: detected.isOneOnOne,
     });
@@ -221,53 +215,21 @@ export function NotePage() {
 
   const thoughts = notes?.filter(isThought) ?? [];
 
-  // Merge notes and issues into a single list sorted by created_at desc
-  type UnifiedItem =
-    | { kind: 'note'; item: Note }
-    | { kind: 'issue'; item: Issue };
-
-  const allItems: UnifiedItem[] = useMemo(() => {
-    const items: UnifiedItem[] = [];
-    for (const n of notes ?? []) items.push({ kind: 'note', item: n });
-    for (const i of issues ?? []) {
-      // issues with status 'in_progress' should show when filter is 'open' or 'all'
-      items.push({ kind: 'issue', item: i });
-    }
-    items.sort((a, b) => new Date(b.item.created_at).getTime() - new Date(a.item.created_at).getTime());
-    return items;
-  }, [notes, issues]);
-
-  // Unified keyboard navigation across thoughts + all notes
-  const thoughtCount = thoughts.length;
   const { containerRef: unifiedContainerRef } = useFocusNavigation({
     selector: '.dashboard-item-row',
     onDismiss: (i) => {
-      if (i < thoughtCount) {
-        const note = thoughts[i];
-        if (note) updateNote.mutate({ id: note.id, status: note.status === 'done' ? 'open' : 'done' });
-      } else {
-        const entry = allItems[i - thoughtCount];
-        if (!entry) return;
-        if (entry.kind === 'note') {
-          updateNote.mutate({ id: entry.item.id, status: entry.item.status === 'done' ? 'open' : 'done' });
-        } else {
-          updateIssue.mutate({ id: entry.item.id, status: entry.item.status === 'done' ? 'open' : 'done' });
-        }
-      }
+      const note = thoughts[i];
+      if (note) updateNote.mutate({ id: note.id, status: note.status === 'done' ? 'open' : 'done' });
     },
     onCreateIssue: (i) => {
-      const note = i < thoughtCount
-        ? thoughts[i]
-        : allItems[i - thoughtCount]?.kind === 'note' ? allItems[i - thoughtCount].item as Note : null;
-      if (note) {
-        createIssue.mutate({ title: note.text.slice(0, 120), person_ids: note.people?.map((p) => p.id) || [] });
-      }
+      const note = thoughts[i];
+      if (note) createIssue.mutate({ title: note.text.replace(/^\[[tT]\]\s*/, '').slice(0, 120), person_ids: note.people?.map((p) => p.id) || [] });
     },
   });
 
   return (
     <div>
-      <h1>Notes</h1>
+      <h1>Thoughts</h1>
 
       <form onSubmit={handleSubmit}>
         <div className="note-input-wrapper">
@@ -277,7 +239,7 @@ export function NotePage() {
             value={text}
             onChange={(e) => handleTextChange(e.target.value)}
             onKeyDown={(e) => mention.handleKeyDown(e, text, (t) => { setText(t); mention.handleChange(t); })}
-            placeholder="Add a note... (@ to mention, [t] thought, [i] issue)"
+            placeholder="Add a thought... (@ to mention, [i] issue, [1] 1:1 topic)"
             autoFocus
           />
           {mention.isOpen && (
@@ -331,110 +293,27 @@ export function NotePage() {
       {isLoading && <p className="empty-state">Loading...</p>}
 
       <div ref={unifiedContainerRef}>
-      {/* Thoughts section */}
-      {thoughts.length > 0 && (
-        <div style={{ marginBottom: 'var(--space-xl)' }}>
-          <h2>Thoughts</h2>
-          <div>
-            {thoughts.map((note) => (
-              <NoteItem
-                key={note.id}
-                note={note}
-                onToggle={() =>
-                  updateNote.mutate({
-                    id: note.id,
-                    status: note.status === 'done' ? 'open' : 'done',
-                  })
-                }
-                onDelete={() => deleteNote.mutate(note.id)}
-                onUpdate={(text) => updateNote.mutate({ id: note.id, text })}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* All notes + issues */}
-      <div>
-        <h2>All Notes</h2>
-        <div>
-        {allItems.map((entry) => {
-          if (entry.kind === 'note') {
-            const note = entry.item;
-            return (
-              <NoteItem
-                key={`note-${note.id}`}
-                note={note}
-                onToggle={() =>
-                  updateNote.mutate({
-                    id: note.id,
-                    status: note.status === 'done' ? 'open' : 'done',
-                  })
-                }
-                onDelete={() => deleteNote.mutate(note.id)}
-                onUpdate={(text) => updateNote.mutate({ id: note.id, text })}
-              />
-            );
-          }
-          const issue = entry.item;
-          return (
-            <div
-              key={`issue-${issue.id}`}
-              id={`issue-${issue.id}`}
-              className={`note-item dashboard-item-row ${issue.status === 'done' ? 'done' : ''} priority-p${issue.priority}`}
-            >
-              <input
-                type="checkbox"
-                checked={issue.status === 'done'}
-                onChange={() =>
-                  updateIssue.mutate({
-                    id: issue.id,
-                    status: issue.status === 'done' ? 'open' : 'done',
-                  })
-                }
-              />
-              <div className="note-text">
-                <div>
-                  <span className={`issue-size-badge size-${issue.tshirt_size}`} style={{ marginRight: 'var(--space-xs)' }}>
-                    {(issue.tshirt_size || 'm').toUpperCase()}
-                  </span>
-                  <Link to={`/issues?issueId=${issue.id}`}>{issue.title}</Link>
-                </div>
-                <div className="note-meta">
-                  {issue.people.map((p, i) => (
-                    <span key={p.id}>
-                      {i > 0 && ', '}
-                      <Link to={`/people/${p.id}`}>{p.name}</Link>
-                    </span>
-                  ))}
-                  <span className="note-badge">issue</span>
-                  {issue.status === 'in_progress' && <span className="note-badge">in progress</span>}
-                </div>
-              </div>
-              <button
-                onClick={() => { if (confirm('Delete this issue?')) deleteIssue.mutate(issue.id); }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--color-text-light)',
-                  cursor: 'pointer',
-                  fontSize: 'var(--text-xs)',
-                }}
-              >
-                &times;
-              </button>
-            </div>
-          );
-        })}
-        {allItems.length === 0 && !isLoading && (
+        {thoughts.map((note) => (
+          <NoteItem
+            key={note.id}
+            note={note}
+            onToggle={() =>
+              updateNote.mutate({
+                id: note.id,
+                status: note.status === 'done' ? 'open' : 'done',
+              })
+            }
+            onDelete={() => deleteNote.mutate(note.id)}
+            onUpdate={(text) => updateNote.mutate({ id: note.id, text })}
+          />
+        ))}
+        {thoughts.length === 0 && !isLoading && (
           <p className="empty-state">
-            {statusFilter === 'open' ? 'All caught up.' : 'No notes found.'}
+            {statusFilter === 'open' ? 'Nothing yet.' : 'No thoughts found.'}
           </p>
         )}
-        </div>
       </div>
-      </div>
-      {allItems.length > 0 && (
+      {thoughts.length > 0 && (
         <KeyboardHints hints={['j/k navigate', 'Enter open', 'd toggle done', 'i create issue']} />
       )}
     </div>

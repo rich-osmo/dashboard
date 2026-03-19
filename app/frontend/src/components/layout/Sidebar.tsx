@@ -130,7 +130,7 @@ export function Sidebar() {
 
         <div className="sidebar-section-label">work</div>
         <nav>
-          <NavLink to="/notes">Notes</NavLink>
+          <NavLink to="/notes">Thoughts</NavLink>
           <NavLink to="/issues">Issues</NavLink>
           <NavLink to="/longform">Writing</NavLink>
           {(active.has('google') || active.has('granola')) && <NavLink to="/meetings">Meetings</NavLink>}

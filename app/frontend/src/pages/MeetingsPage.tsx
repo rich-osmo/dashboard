@@ -360,7 +360,10 @@ function MeetingRow({
       {expanded && (
         <div className="meeting-details">
           {meeting.description && (
-            <p className="meeting-description">{meeting.description}</p>
+            <div
+              className="meeting-description markdown-content"
+              dangerouslySetInnerHTML={{ __html: sanitizeHtml(meeting.description) }}
+            />
           )}
 
           {attendeeNames.length > 0 && (

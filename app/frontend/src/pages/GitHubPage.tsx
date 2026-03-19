@@ -1,15 +1,19 @@
 import { useState, useMemo, useCallback } from 'react';
-import { useGitHubPulls, useGitHubSearch, useGitHubCodeSearch, useDismissPrioritizedItem, useCreateIssue, useAllGitHub } from '../api/hooks';
+import { useGitHubPulls, useGitHubSearch, useGitHubCodeSearch, useDismissPrioritizedItem, useCreateIssue, useAllGitHub, usePrioritizedGitHub, useRefreshPrioritizedGitHub } from '../api/hooks';
 import { TimeAgo } from '../components/shared/TimeAgo';
 import { useFocusNavigation } from '../hooks/useFocusNavigation';
 import { KeyboardHints } from '../components/shared/KeyboardHints';
 import { InfiniteScrollSentinel } from '../components/shared/InfiniteScrollSentinel';
+import { ScoreBadge } from '../components/shared/PrioritizedSourceList';
 
-type Tab = 'reviews' | 'open' | 'search' | 'all';
+type Tab = 'priority' | 'reviews' | 'open' | 'search' | 'all';
 type SearchMode = 'prs' | 'code';
 
+const SCORE_OPTIONS = [3, 5, 6, 7, 8] as const;
+
 export function GitHubPage() {
-  const [tab, setTab] = useState<Tab>('reviews');
+  const [tab, setTab] = useState<Tab>('priority');
+  const [minScore, setMinScore] = useState(6);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchMode, setSearchMode] = useState<SearchMode>('prs');
   const [submittedQuery, setSubmittedQuery] = useState('');
@@ -25,6 +29,8 @@ export function GitHubPage() {
     });
   }, []);
 
+  const prioritizedQuery = usePrioritizedGitHub();
+  const refresh = useRefreshPrioritizedGitHub();
   const reviewPulls = useGitHubPulls({ review_requested: true });
   const openPulls = useGitHubPulls({ state: 'open' });
   const searchResults = useGitHubSearch(submittedQuery, searchMode === 'prs' ? 'pr' : undefined);
@@ -38,7 +44,7 @@ export function GitHubPage() {
 
   const { containerRef } = useFocusNavigation({
     selector: '.dashboard-item-row',
-    enabled: tab !== 'search' && tab !== 'all',
+    enabled: tab === 'reviews' || tab === 'open',
     onDismiss: (i) => { if (activePulls[i]) dismiss.mutate({ source: 'github', item_id: String(activePulls[i].number) }); },
     onCreateIssue: (i) => { if (activePulls[i]) createIssue.mutate({ title: activePulls[i].title }); },
     onExpand: (i) => { if (activePulls[i]) toggleExpand(activePulls[i].number); },
@@ -54,6 +60,9 @@ export function GitHubPage() {
   const allPRs = useMemo(() => allQuery.data?.pages.flatMap(p => p.items) ?? [], [allQuery.data]);
   const allTotal = allQuery.data?.pages[0]?.total ?? 0;
 
+  const prioritizedItems = prioritizedQuery.data?.items ?? [];
+  const filteredPriority = prioritizedItems.filter(pr => pr.priority_score >= minScore);
+
   return (
     <div ref={containerRef}>
       <h1>GitHub</h1>
@@ -62,6 +71,15 @@ export function GitHubPage() {
       </p>
 
       <div className="github-tabs">
+        <button
+          className={`github-tab ${tab === 'priority' ? 'active' : ''}`}
+          onClick={() => setTab('priority')}
+        >
+          Priority
+          {filteredPriority.length > 0 && (
+            <span className="github-tab-count">({filteredPriority.length})</span>
+          )}
+        </button>
         <button
           className={`github-tab ${tab === 'reviews' ? 'active' : ''}`}
           onClick={() => setTab('reviews')}
@@ -93,6 +111,82 @@ export function GitHubPage() {
           All{allTotal > 0 ? ` (${allTotal})` : ''}
         </button>
       </div>
+
+      {tab === 'priority' && (
+        <div>
+          <div style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'center', marginBottom: 'var(--space-md)', flexWrap: 'wrap' }}>
+            <span className="day-filter">
+              {SCORE_OPTIONS.map((s) => (
+                <button
+                  key={s}
+                  className={`day-filter-btn${minScore === s ? ' day-filter-active' : ''}`}
+                  onClick={() => setMinScore(s)}
+                >
+                  {s}+
+                </button>
+              ))}
+            </span>
+            <button
+              className="priorities-refresh-btn"
+              onClick={() => refresh.mutate()}
+              disabled={refresh.isPending || prioritizedQuery.data?.stale}
+              title="Re-rank with AI"
+            >
+              {prioritizedQuery.data?.stale ? 'Updating...' : refresh.isPending ? 'Ranking...' : 'Refresh'}
+            </button>
+          </div>
+
+          {prioritizedQuery.isLoading && <p className="empty-state">Ranking PRs with AI...</p>}
+          {prioritizedQuery.data?.error && (
+            <p className="empty-state">{prioritizedQuery.data.error}</p>
+          )}
+
+          <div className="github-pr-list">
+            {filteredPriority.map((pr) => (
+              <div key={pr.number} className="dashboard-item-row">
+                <a
+                  className="dashboard-item dashboard-item-link"
+                  href={pr.html_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'flex-start' }}
+                >
+                  <div style={{ flexShrink: 0, paddingTop: '2px' }}>
+                    <ScoreBadge score={pr.priority_score} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="dashboard-item-title">
+                      <span className="github-pr-number">#{pr.number}</span>{' '}
+                      {pr.title}
+                      {pr.draft && <span className="github-badge github-badge-draft">draft</span>}
+                      {pr.review_requested && <span className="github-badge">review requested</span>}
+                      {pr.labels.map((l) => (
+                        <span key={l} className="github-badge">{l}</span>
+                      ))}
+                    </div>
+                    <div className="dashboard-item-meta">
+                      {pr.author} &middot; {pr.head_ref} &middot; <TimeAgo date={pr.updated_at} />
+                    </div>
+                    {pr.priority_reason && (
+                      <div className="dashboard-item-meta" style={{ fontStyle: 'italic' }}>
+                        {pr.priority_reason}
+                      </div>
+                    )}
+                  </div>
+                </a>
+                <button
+                  className="dashboard-dismiss-btn"
+                  onClick={() => dismiss.mutate({ source: 'github', item_id: String(pr.number) })}
+                  title="Mark as seen"
+                >&times;</button>
+              </div>
+            ))}
+            {!prioritizedQuery.isLoading && !prioritizedQuery.data?.error && filteredPriority.length === 0 && (
+              <p className="empty-state">No PRs with score {minScore}+</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {tab === 'reviews' && (
         <div className="github-pr-list">

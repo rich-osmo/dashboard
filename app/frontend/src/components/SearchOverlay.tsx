@@ -29,7 +29,7 @@ type FlatResult = {
 // Pages available as quick-nav commands
 const PAGE_COMMANDS: { label: string; sublabel: string; route: string; keywords: string[]; externalUrl?: string }[] = [
   { label: 'Today', sublabel: 'Home overview', route: '/', keywords: ['dashboard', 'home', 'overview', 'briefing', 'today'] },
-  { label: 'Notes', sublabel: 'Add and manage notes', route: '/notes?focus=1', keywords: ['notes', 'note', 'todo', 'todos', 'thoughts', 'thought'] },
+  { label: 'Thoughts', sublabel: 'Add and manage thoughts', route: '/notes?focus=1', keywords: ['thoughts', 'thought', 'notes', 'note', 'todo', 'todos'] },
   { label: 'Issues', sublabel: 'Track work items', route: '/issues', keywords: ['issues', 'issue', 'bugs', 'tasks', 'work'] },
   { label: 'Writing', sublabel: 'Blog posts and drafts', route: '/longform', keywords: ['longform', 'blog', 'post', 'writing', 'draft', 'article'] },
   { label: 'Meetings', sublabel: 'Calendar and meeting notes', route: '/meetings', keywords: ['meetings', 'meeting', 'calendar'] },
@@ -54,13 +54,13 @@ interface SearchOverlayProps {
 }
 
 type OverlayMode = 'search' | 'create-pick' | 'issue-size' | 'issue-priority' | 'input';
-type CreateType = 'note' | 'thought' | 'issue';
+type CreateType = 'thought' | 'issue';
 interface IssueAttrs { size: 's' | 'm' | 'l' | 'xl'; priority: 0 | 1 | 2 | 3; }
 
 export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProps) {
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState<OverlayMode>('search');
-  const [createType, setCreateType] = useState<CreateType>('note');
+  const [createType, setCreateType] = useState<CreateType>('thought');
   const [issueAttrs, setIssueAttrs] = useState<IssueAttrs>({ size: 's', priority: 1 });
   const [includeExternal, setIncludeExternal] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -133,7 +133,7 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
   }, [mode, query, employees]);
 
   const resetCreateState = useCallback(() => {
-    setCreateType('note');
+    setCreateType('thought');
     setIssueAttrs({ size: 's', priority: 1 });
     setMentionQuery(null);
     setMentionStart(-1);
@@ -229,7 +229,7 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
       const cleanText = note.text.replace(/^\[[tT1]\]\s*/, '');
       const prefix = note.is_one_on_one ? '[1:1] ' : isThought ? '~ ' : '';
       flat.push({
-        category: 'Notes',
+        category: 'Thoughts',
         type: 'note',
         id: String(note.id),
         label: `${prefix}${cleanText.slice(0, 100)}`,
@@ -404,7 +404,7 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
       else if (isThought) sublabel += ' \u2014 thought';
       else if (isOneOnOne) sublabel += ' \u2014 1:1 topic';
 
-      const addLabel = parsedQuery.isIssue ? 'Add as issue' : 'Add as note';
+      const addLabel = parsedQuery.isIssue ? 'Add as issue' : 'Add as thought';
       const displayText = parsedQuery.isIssue ? parsedQuery.title : trimmedQuery;
       flat.push({
         category: 'Quick add',
@@ -430,7 +430,7 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
       setQuery('');
       setDebouncedQuery('');
       setMode('search');
-      setCreateType('note');
+      setCreateType('thought');
       setIssueAttrs({ size: 's', priority: 1 });
       setSelectedIndex(0);
       setPreview(null);
@@ -479,9 +479,10 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
         { onSuccess }
       );
     } else {
+      const prefixed = /^\[[tT1]\]/.test(trimmed) ? trimmed : `[t] ${trimmed}`;
       createNote.mutate(
         {
-          text: trimmed,
+          text: prefixed,
           person_ids: detected.employees.map((e) => e.id),
           is_one_on_one: detected.isOneOnOne,
         },
@@ -518,21 +519,12 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
         },
         { onSuccess: () => onSuccess(`Issue: ${trimmed}`) }
       );
-    } else if (createType === 'thought') {
+    } else {
       createNote.mutate(
         {
           text: `[t] ${trimmed}`,
           person_ids: detected.employees.map((e) => e.id),
           is_one_on_one: false,
-        },
-        { onSuccess: () => onSuccess(trimmed) }
-      );
-    } else {
-      createNote.mutate(
-        {
-          text: trimmed,
-          person_ids: detected.employees.map((e) => e.id),
-          is_one_on_one: detected.isOneOnOne,
         },
         { onSuccess: () => onSuccess(trimmed) }
       );
@@ -596,16 +588,12 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
         setCreateType('thought');
         setMode('input');
         setTimeout(() => inputRef.current?.focus(), 0);
-      } else if (e.key === 'n') {
-        setCreateType('note');
-        setMode('input');
-        setTimeout(() => inputRef.current?.focus(), 0);
       } else if (e.key === 'Escape' || e.key === 'Tab') {
         setMode('search');
         resetCreateState();
       } else if (e.key.length === 1 && !e.metaKey && !e.ctrlKey) {
-        // Any other printable char: default to note, char becomes first char
-        setCreateType('note');
+        // Any other printable char: default to thought, char becomes first char
+        setCreateType('thought');
         setQuery(e.key);
         setMode('input');
         setTimeout(() => inputRef.current?.focus(), 0);
@@ -753,7 +741,6 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
               {mode === 'issue-priority' && <>Issue &middot; {issueAttrs.size.toUpperCase()}</>}
               {mode === 'input' && createType === 'issue' && <>Issue &middot; {issueAttrs.size.toUpperCase()} &middot; P{issueAttrs.priority}</>}
               {mode === 'input' && createType === 'thought' && 'Thought'}
-              {mode === 'input' && createType === 'note' && 'Note'}
             </span>
           )}
           <input
@@ -772,8 +759,7 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
               mode === 'issue-size' ? '' :
               mode === 'issue-priority' ? '' :
               createType === 'issue' ? 'Issue title... (@name to link)' :
-              createType === 'thought' ? 'Type your thought... (@name to link)' :
-              'Type a note... (@name to link, [1] for 1:1)'
+              'Type your thought... (@name to link)'
             }
             autoComplete="off"
             readOnly={mode === 'create-pick' || mode === 'issue-size' || mode === 'issue-priority'}
@@ -798,7 +784,7 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
         {addedConfirmation ? (
           <div className="search-note-added">
             <span className="search-note-added-icon">&#x2713;</span>
-            <span>{addedConfirmation.startsWith('Issue:') ? 'Issue' : 'Note'} added</span>
+            <span>{addedConfirmation.startsWith('Issue:') ? 'Issue' : 'Thought'} added</span>
           </div>
         ) : mode === 'create-pick' ? (
           /* --- CREATE-PICK: type selection --- */
@@ -809,9 +795,6 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
               </button>
               <button className="search-picker-pill" onClick={() => { setCreateType('thought'); setMode('input'); setTimeout(() => inputRef.current?.focus(), 0); }}>
                 <kbd>t</kbd> Thought
-              </button>
-              <button className="search-picker-pill" onClick={() => { setCreateType('note'); setMode('input'); setTimeout(() => inputRef.current?.focus(), 0); }}>
-                <kbd>n</kbd> Note
               </button>
             </div>
             <div className="search-footer">
@@ -883,7 +866,7 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
                   </p>
                   <p className="search-note-help-hint">
                     <code>@name</code> to link to a person
-                    {createType === 'note' && <> &middot; <code>[1]</code> prefix for 1:1 topic</>}
+                    {createType === 'thought' && <> &middot; <code>[1]</code> prefix for 1:1 topic</>}
                   </p>
                 </div>
               )}
@@ -1017,7 +1000,7 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
                 {query.trim() && (
                   <>
                     &nbsp;&middot;&nbsp;
-                    <kbd>&#x2318;Enter</kbd> add note
+                    <kbd>&#x2318;Enter</kbd> add thought
                   </>
                 )}
                 &nbsp;&middot;&nbsp;

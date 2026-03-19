@@ -266,6 +266,68 @@ def _check_news() -> dict:
     }
 
 
+def _check_gemini() -> dict:
+    result = {"configured": False, "connected": False, "error": None, "detail": None}
+    api_key = get_secret("GEMINI_API_KEY") or ""
+    if not api_key:
+        result["detail"] = "GEMINI_API_KEY not configured"
+        return result
+    result["configured"] = True
+    try:
+        from google import genai
+
+        client = genai.Client(api_key=api_key)
+        client.models.generate_content(model="gemini-2.0-flash", contents="ping")
+        result["connected"] = True
+    except Exception as e:
+        result["error"] = str(e)
+    return result
+
+
+def _check_anthropic() -> dict:
+    result = {"configured": False, "connected": False, "error": None, "detail": None}
+    api_key = get_secret("ANTHROPIC_API_KEY") or ""
+    if not api_key:
+        result["detail"] = "ANTHROPIC_API_KEY not configured"
+        return result
+    result["configured"] = True
+    try:
+        import anthropic
+
+        client = anthropic.Anthropic(api_key=api_key)
+        client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=10,
+            messages=[{"role": "user", "content": "ping"}],
+        )
+        result["connected"] = True
+    except Exception as e:
+        result["error"] = str(e)
+    return result
+
+
+def _check_openai() -> dict:
+    result = {"configured": False, "connected": False, "error": None, "detail": None}
+    api_key = get_secret("OPENAI_API_KEY") or ""
+    if not api_key:
+        result["detail"] = "OPENAI_API_KEY not configured"
+        return result
+    result["configured"] = True
+    try:
+        import openai
+
+        client = openai.OpenAI(api_key=api_key)
+        client.chat.completions.create(
+            model="gpt-5.4-mini",
+            messages=[{"role": "user", "content": "ping"}],
+            max_completion_tokens=5,
+        )
+        result["connected"] = True
+    except Exception as e:
+        result["error"] = str(e)
+    return result
+
+
 def _get_sync_states() -> dict:
     """Fetch last sync state per source from the database."""
     from database import get_db_connection
@@ -480,6 +542,9 @@ def test_connection(service: str):
         "claude_code": _check_claude_code,
         "news": _check_news,
         "obsidian": _check_obsidian,
+        "gemini": _check_gemini,
+        "anthropic": _check_anthropic,
+        "openai": _check_openai,
     }
     # Lazy import to avoid circular deps
     from routers.whatsapp import _check_whatsapp

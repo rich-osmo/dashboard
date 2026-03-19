@@ -601,7 +601,11 @@ function ProfileSection() {
   );
 }
 
-const AI_PROVIDER_MAP: Record<string, string> = { gemini: 'gemini', anthropic: 'anthropic', openai: 'openai' };
+const AI_PROVIDERS = [
+  { value: 'gemini', label: 'Gemini (Google)', placeholder: 'gemini-2.0-flash', secretKey: 'GEMINI_API_KEY' },
+  { value: 'anthropic', label: 'Anthropic (Claude)', placeholder: 'claude-sonnet-4-5', secretKey: 'ANTHROPIC_API_KEY' },
+  { value: 'openai', label: 'OpenAI (GPT)', placeholder: 'gpt-5.4-mini', secretKey: 'OPENAI_API_KEY' },
+];
 
 function AISection({
   connectors,
@@ -612,59 +616,82 @@ function AISection({
 }) {
   const { data: profile } = useProfile();
   const update = useUpdateProfile();
-  const currentProvider = profile?.ai_provider || 'gemini';
-  const currentModel = profile?.ai_model || '';
+  const rankingProvider = profile?.ai_provider || 'gemini';
+  const rankingModel = profile?.ai_model || '';
+  const agentProvider = profile?.agent_provider || rankingProvider;
+  const agentModel = profile?.agent_model || '';
 
-  const handleProviderChange = (provider: string) => {
-    update.mutate({ ai_provider: provider, ai_model: '' });
-  };
+  const rankingPlaceholder = AI_PROVIDERS.find(p => p.value === rankingProvider)?.placeholder ?? 'gemini-2.0-flash';
+  const agentPlaceholder = AI_PROVIDERS.find(p => p.value === agentProvider)?.placeholder ?? 'gemini-2.0-flash';
 
-  const handleModelChange = (model: string) => {
-    update.mutate({ ai_model: model });
-  };
-
-  const matchingConnector = connectors.find(c => c.id === AI_PROVIDER_MAP[currentProvider]);
-
-  const placeholder =
-    currentProvider === 'gemini' ? 'gemini-2.0-flash' :
-    currentProvider === 'anthropic' ? 'claude-sonnet-4-20250514' :
-    'gpt-4o-mini';
+  // Show all three AI provider connector cards
+  const aiConnectors = AI_PROVIDERS.map(p => connectors.find(c => c.id === p.value)).filter(Boolean) as ConnectorInfo[];
 
   return (
     <section className="settings-group">
       <h3>AI</h3>
       <p className="settings-group-desc">
-        Powers priority ranking, issue discovery, and news scoring. Pick a provider and add your API key.
+        Store API keys for any or all providers, then choose which to use for rankings and the agent independently.
+      </p>
+
+      <h4 style={{ marginBottom: 'var(--space-xs)', marginTop: 'var(--space-md)' }}>API Keys</h4>
+      <div className="auth-grid">
+        {aiConnectors.map(connector => (
+          <ServiceCard
+            key={connector.id}
+            connector={connector}
+            status={authMap[connector.id as keyof typeof authMap]}
+          />
+        ))}
+      </div>
+
+      <h4 style={{ marginBottom: 'var(--space-xs)', marginTop: 'var(--space-lg)' }}>Rankings &amp; Summaries</h4>
+      <p className="settings-group-desc" style={{ marginTop: 0 }}>
+        Used for priority ranking, issue discovery, and news scoring.
       </p>
       <div className="setup-form" style={{ maxWidth: '400px', marginBottom: 'var(--space-md)' }}>
         <label>Provider
           <select
-            value={currentProvider}
-            onChange={(e) => handleProviderChange(e.target.value)}
+            value={rankingProvider}
+            onChange={(e) => update.mutate({ ai_provider: e.target.value, ai_model: '' })}
             disabled={update.isPending}
           >
-            <option value="gemini">Gemini (Google)</option>
-            <option value="anthropic">Anthropic (Claude)</option>
-            <option value="openai">OpenAI (GPT)</option>
+            {AI_PROVIDERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
           </select>
         </label>
         <label>Model
           <input
             type="text"
-            value={currentModel}
-            onChange={(e) => handleModelChange(e.target.value)}
-            placeholder={placeholder}
+            value={rankingModel}
+            onChange={(e) => update.mutate({ ai_model: e.target.value })}
+            placeholder={rankingPlaceholder}
           />
         </label>
       </div>
-      {matchingConnector && (
-        <div className="auth-grid">
-          <ServiceCard
-            connector={matchingConnector}
-            status={authMap[matchingConnector.id as keyof typeof authMap]}
+
+      <h4 style={{ marginBottom: 'var(--space-xs)', marginTop: 'var(--space-lg)' }}>Agent</h4>
+      <p className="settings-group-desc" style={{ marginTop: 0 }}>
+        Used for the AI agent / chat feature.
+      </p>
+      <div className="setup-form" style={{ maxWidth: '400px' }}>
+        <label>Provider
+          <select
+            value={agentProvider}
+            onChange={(e) => update.mutate({ agent_provider: e.target.value, agent_model: '' })}
+            disabled={update.isPending}
+          >
+            {AI_PROVIDERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+          </select>
+        </label>
+        <label>Model
+          <input
+            type="text"
+            value={agentModel}
+            onChange={(e) => update.mutate({ agent_model: e.target.value })}
+            placeholder={agentPlaceholder}
           />
-        </div>
-      )}
+        </label>
+      </div>
     </section>
   );
 }

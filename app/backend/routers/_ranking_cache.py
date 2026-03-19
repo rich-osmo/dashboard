@@ -12,12 +12,16 @@ logger = logging.getLogger(__name__)
 
 
 def compute_items_hash(items: list[dict]) -> str:
-    """Deterministic hash of the items list sent to Gemini.
+    """Deterministic hash of the items list and current AI provider/model.
 
     Returns a short hex digest that can be stored alongside cached results
-    to detect when input data has changed and re-ranking is needed.
+    to detect when input data has changed or the AI provider has changed,
+    so re-ranking is triggered in either case.
     """
-    raw = json.dumps(items, sort_keys=True, default=str)
+    from ai_client import _get_provider_and_model
+
+    provider, model = _get_provider_and_model()
+    raw = json.dumps(items, sort_keys=True, default=str) + f"|{provider}|{model}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
@@ -56,6 +60,7 @@ def rerank_stale_sources():
     Called after sync completes to pre-compute fresh rankings.
     """
     from routers.drive_api import rerank_drive
+    from routers.github_api import rerank_github
     from routers.gmail import rerank_email
     from routers.news import rerank_news
     from routers.notion_api import rerank_notion
@@ -72,6 +77,7 @@ def rerank_stale_sources():
         ("drive", rerank_drive),
         ("ramp", rerank_ramp),
         ("obsidian", rerank_obsidian),
+        ("github", rerank_github),
         ("priorities", rerank_priorities),
     ]
 

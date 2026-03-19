@@ -21,7 +21,7 @@ test.describe('app loads', () => {
 test.describe('sidebar navigation', () => {
   // These pages are always visible regardless of connector state
   const corePages = [
-    { link: 'Notes', heading: 'Notes' },
+    { link: 'Thoughts', heading: 'Thoughts' },
     { link: 'Issues', heading: 'Issues' },
     { link: 'Writing', heading: 'Longform' },
     { link: 'People', heading: 'People' },
@@ -88,7 +88,7 @@ test.describe('keyboard navigation', () => {
 
     await page.keyboard.press('g');
     await page.keyboard.press('n');
-    await expect(page.locator('h1:has-text("Notes")')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('h1:has-text("Thoughts")')).toBeVisible({ timeout: 10000 });
   });
 
   test('g then p goes to people', async ({ page }) => {
@@ -104,7 +104,7 @@ test.describe('keyboard navigation', () => {
 test.describe('direct page loads', () => {
   // Verify pages work when navigated to directly (not just via sidebar)
   const pages = [
-    { path: '/notes', heading: 'Notes' },
+    { path: '/notes', heading: 'Thoughts' },
     { path: '/issues', heading: 'Issues' },
     { path: '/longform', heading: 'Longform' },
     { path: '/people', heading: 'People' },

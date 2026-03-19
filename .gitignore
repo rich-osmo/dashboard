@@ -43,8 +43,10 @@ plans/
 
 # Demo mode (generated data + capture output)
 demo/data/
+demo/data-test/
 demo/screenshots/
 demo/video/
+.whatsapp_webhook_token
 
 # Backend specifics
 app/backend/venv/

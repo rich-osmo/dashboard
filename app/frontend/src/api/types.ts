@@ -329,6 +329,29 @@ export interface GitHubCodeSearchResult {
   text_matches?: { fragment: string }[];
 }
 
+export interface PrioritizedGitHubPR {
+  id: string;
+  number: number;
+  title: string;
+  author: string;
+  draft: boolean;
+  head_ref: string;
+  base_ref: string;
+  labels: string[];
+  requested_reviewers: string[];
+  review_requested: boolean;
+  updated_at: string;
+  html_url: string;
+  priority_score: number;
+  priority_reason: string;
+}
+
+export interface PrioritizedGitHubData {
+  items: PrioritizedGitHubPR[];
+  error?: string;
+  stale?: boolean;
+}
+
 export interface SyncStatus {
   running: boolean;
   active_sources: string[];
@@ -935,6 +958,8 @@ export interface UserProfile {
   whatsapp_phone?: string;
   ai_provider?: string;
   ai_model?: string;
+  agent_provider?: string;
+  agent_model?: string;
   auto_sync_interval_seconds?: number;
 }
 

@@ -115,9 +115,9 @@ fmt:
 	@echo "=== TypeScript (eslint) ==="
 	@cd $(FRONTEND_DIR) && npx eslint --fix .
 
-blft: build lint fmt test
+blft: build fmt lint test
 
-verify: build lint fmt test
+verify: build fmt lint test
 
 # --- DMG packaging ---
 

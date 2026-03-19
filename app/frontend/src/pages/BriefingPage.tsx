@@ -18,7 +18,7 @@ const SOURCE_LABELS: Record<string, string> = {
   slack: 'Slack',
   email: 'Email',
   calendar: 'Calendar',
-  note: 'Note',
+  note: 'Thought',
   ramp: 'Ramp',
   drive: 'Drive',
   github: 'GitHub',

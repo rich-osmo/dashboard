@@ -12,7 +12,7 @@ export interface ShortcutDef {
 export const SHORTCUT_DEFINITIONS: ShortcutDef[] = [
   // Navigation (g + key)
   { keys: 'g d', description: 'Go to Today', category: 'navigation' },
-  { keys: 'g n', description: 'Go to Notes', category: 'navigation' },
+  { keys: 'g n', description: 'Go to Thoughts', category: 'navigation' },
   { keys: 'g i', description: 'Go to Issues', category: 'navigation' },
   { keys: 'g l', description: 'Go to Writing', category: 'navigation' },
   { keys: 'g m', description: 'Go to Meetings', category: 'navigation' },
@@ -29,7 +29,7 @@ export const SHORTCUT_DEFINITIONS: ShortcutDef[] = [
 
   // Actions
   { keys: 'h', description: 'Help / intro', category: 'actions' },
-  { keys: 'c', description: 'New note', category: 'actions' },
+  { keys: 'c', description: 'New thought', category: 'actions' },
   { keys: 'r', description: 'Refresh page data', category: 'actions' },
   { keys: 'u', description: 'Undo last action', category: 'actions' },
   { keys: 's', description: 'Sync all data', category: 'actions' },
@@ -66,7 +66,7 @@ export const SHORTCUT_DEFINITIONS: ShortcutDef[] = [
   // Overlays
   { keys: 'Ctrl+Tab', description: 'Switch recent page', category: 'overlays' },
   { keys: '\u2318K', description: 'Search / command palette', category: 'overlays' },
-  { keys: 'Tab (in \u2318K)', description: 'Quick create (issue/thought/note)', category: 'overlays' },
+  { keys: 'Tab (in \u2318K)', description: 'Quick create (issue/thought)', category: 'overlays' },
   { keys: '\u2318E (in \u2318K)', description: 'Toggle external search', category: 'overlays' },
   { keys: '?', description: 'Keyboard shortcuts help', category: 'overlays' },
   { keys: 'Escape', description: 'Close overlay', category: 'overlays' },
