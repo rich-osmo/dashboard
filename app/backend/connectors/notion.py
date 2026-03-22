@@ -267,7 +267,7 @@ def _extract_page_data(page: dict) -> dict:
         "title": title,
         "url": page.get("url", ""),
         "last_edited_time": page.get("last_edited_time", ""),
-        "last_edited_by": page.get("last_edited_by", {}).get("id", ""),
+        "last_edited_by": page.get("last_edited_by", {}).get("name", ""),
         "parent_type": page.get("parent", {}).get("type", ""),
         "parent_id": page.get("parent", {}).get(page.get("parent", {}).get("type", ""), ""),
         "icon": icon,

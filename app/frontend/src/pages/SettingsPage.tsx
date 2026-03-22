@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   useAuthStatus,
@@ -24,8 +24,10 @@ import {
   useWhatsAppStatus,
   useWhatsAppQR,
   useBackupDatabase,
+  useDashboardIssues,
+  useCreateDashboardIssue,
 } from '../api/hooks';
-import type { ServiceAuthStatus, SyncSourceInfo, ConnectorInfo, UserProfile } from '../api/types';
+import type { ServiceAuthStatus, SyncSourceInfo, ConnectorInfo, UserProfile, DashboardIssue } from '../api/types';
 
 function StatusBadge({ status }: { status: ServiceAuthStatus }) {
   const hasSyncErrors = Object.values(status.sync || {}).some(
@@ -602,7 +604,7 @@ function ProfileSection() {
 }
 
 const AI_PROVIDERS = [
-  { value: 'gemini', label: 'Gemini (Google)', placeholder: 'gemini-2.0-flash', secretKey: 'GEMINI_API_KEY' },
+  { value: 'gemini', label: 'Gemini (Google)', placeholder: 'gemini-3.1-flash-lite-preview', secretKey: 'GEMINI_API_KEY' },
   { value: 'anthropic', label: 'Anthropic (Claude)', placeholder: 'claude-sonnet-4-5', secretKey: 'ANTHROPIC_API_KEY' },
   { value: 'openai', label: 'OpenAI (GPT)', placeholder: 'gpt-5.4-mini', secretKey: 'OPENAI_API_KEY' },
 ];
@@ -617,12 +619,18 @@ function AISection({
   const { data: profile } = useProfile();
   const update = useUpdateProfile();
   const rankingProvider = profile?.ai_provider || 'gemini';
-  const rankingModel = profile?.ai_model || '';
   const agentProvider = profile?.agent_provider || rankingProvider;
-  const agentModel = profile?.agent_model || '';
 
-  const rankingPlaceholder = AI_PROVIDERS.find(p => p.value === rankingProvider)?.placeholder ?? 'gemini-2.0-flash';
-  const agentPlaceholder = AI_PROVIDERS.find(p => p.value === agentProvider)?.placeholder ?? 'gemini-2.0-flash';
+  const defaultPlaceholder = 'gemini-3.1-flash-lite-preview';
+  const rankingPlaceholder = AI_PROVIDERS.find(p => p.value === rankingProvider)?.placeholder ?? defaultPlaceholder;
+  const agentPlaceholder = AI_PROVIDERS.find(p => p.value === agentProvider)?.placeholder ?? defaultPlaceholder;
+
+  const [rankingModel, setRankingModel] = useState(profile?.ai_model || '');
+  const [agentModel, setAgentModel] = useState(profile?.agent_model || '');
+
+  // Sync local state when profile loads from server
+  useEffect(() => { setRankingModel(profile?.ai_model || ''); }, [profile?.ai_model]);
+  useEffect(() => { setAgentModel(profile?.agent_model || ''); }, [profile?.agent_model]);
 
   // Show all three AI provider connector cards
   const aiConnectors = AI_PROVIDERS.map(p => connectors.find(c => c.id === p.value)).filter(Boolean) as ConnectorInfo[];
@@ -653,7 +661,7 @@ function AISection({
         <label>Provider
           <select
             value={rankingProvider}
-            onChange={(e) => update.mutate({ ai_provider: e.target.value, ai_model: '' })}
+            onChange={(e) => { update.mutate({ ai_provider: e.target.value, ai_model: '' }); setRankingModel(''); }}
             disabled={update.isPending}
           >
             {AI_PROVIDERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
@@ -663,7 +671,9 @@ function AISection({
           <input
             type="text"
             value={rankingModel}
-            onChange={(e) => update.mutate({ ai_model: e.target.value })}
+            onChange={(e) => setRankingModel(e.target.value)}
+            onBlur={() => update.mutate({ ai_model: rankingModel })}
+            onKeyDown={(e) => e.key === 'Enter' && update.mutate({ ai_model: rankingModel })}
             placeholder={rankingPlaceholder}
           />
         </label>
@@ -677,7 +687,7 @@ function AISection({
         <label>Provider
           <select
             value={agentProvider}
-            onChange={(e) => update.mutate({ agent_provider: e.target.value, agent_model: '' })}
+            onChange={(e) => { update.mutate({ agent_provider: e.target.value, agent_model: '' }); setAgentModel(''); }}
             disabled={update.isPending}
           >
             {AI_PROVIDERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
@@ -687,7 +697,9 @@ function AISection({
           <input
             type="text"
             value={agentModel}
-            onChange={(e) => update.mutate({ agent_model: e.target.value })}
+            onChange={(e) => setAgentModel(e.target.value)}
+            onBlur={() => update.mutate({ agent_model: agentModel })}
+            onKeyDown={(e) => e.key === 'Enter' && update.mutate({ agent_model: agentModel })}
             placeholder={agentPlaceholder}
           />
         </label>
@@ -1003,7 +1015,7 @@ const CONNECTOR_GROUPS: { label: string; description: string; ids: string[] }[] 
 
 const AI_CONNECTOR_IDS = new Set(['gemini', 'anthropic', 'openai']);
 
-type SettingsTab = 'connections' | 'ai' | 'sync' | 'profile' | 'advanced';
+type SettingsTab = 'connections' | 'ai' | 'sync' | 'profile' | 'advanced' | 'feedback';
 
 export function SettingsPage() {
   const { data: authData, isLoading: authLoading, refetch } = useAuthStatus();
@@ -1057,6 +1069,14 @@ export function SettingsPage() {
         >
           Advanced
         </button>
+        {allConnectors.find(c => c.id === 'github')?.enabled && (
+          <button
+            className={`tab ${activeTab === 'feedback' ? 'active' : ''}`}
+            onClick={() => setActiveTab('feedback')}
+          >
+            Feedback
+          </button>
+        )}
       </div>
 
       {activeTab === 'connections' && (
@@ -1153,6 +1173,159 @@ export function SettingsPage() {
           </section>
         </>
       )}
+
+      {activeTab === 'feedback' && <FeedbackTab />}
     </div>
+  );
+}
+
+function FeedbackTab() {
+  const { data: issues, isLoading, error } = useDashboardIssues();
+  const createIssue = useCreateDashboardIssue();
+  const [type, setType] = useState<'bug' | 'enhancement'>('bug');
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [submitted, setSubmitted] = useState<{ number: number; html_url: string } | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!title.trim()) return;
+    const result = await createIssue.mutateAsync({ title: title.trim(), body: body.trim(), labels: [type] });
+    setSubmitted(result);
+    setTitle('');
+    setBody('');
+  }
+
+  return (
+    <>
+      <section className="settings-group">
+        <h3>Report a Bug / Request a Feature</h3>
+        <p className="settings-group-desc">
+          Open an issue in the{' '}
+          <a href="https://github.com/richwhitjr/dashboard/issues" target="_blank" rel="noreferrer">
+            richwhitjr/dashboard
+          </a>{' '}
+          repository. Issues are filed as your GitHub user.
+        </p>
+
+        {submitted ? (
+          <div style={{ marginBottom: 'var(--space-md)' }}>
+            <p>
+              Issue{' '}
+              <a href={submitted.html_url} target="_blank" rel="noreferrer">
+                #{submitted.number}
+              </a>{' '}
+              created successfully.{' '}
+              <button
+                className="link-button"
+                onClick={() => setSubmitted(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-accent)', padding: 0 }}
+              >
+                File another
+              </button>
+            </p>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)', maxWidth: 560 }}>
+            <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+              <button
+                type="button"
+                className={`tab ${type === 'bug' ? 'active' : ''}`}
+                onClick={() => setType('bug')}
+                style={{ fontSize: 'var(--text-sm)' }}
+              >
+                Bug
+              </button>
+              <button
+                type="button"
+                className={`tab ${type === 'enhancement' ? 'active' : ''}`}
+                onClick={() => setType('enhancement')}
+                style={{ fontSize: 'var(--text-sm)' }}
+              >
+                Feature Request
+              </button>
+            </div>
+            <input
+              type="text"
+              placeholder="Title"
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              required
+              style={{ padding: 'var(--space-xs) var(--space-sm)', fontFamily: 'inherit', fontSize: 'var(--text-sm)', border: '1px solid var(--color-border)', borderRadius: 4, background: 'var(--color-bg-secondary)', color: 'var(--color-text)' }}
+            />
+            <textarea
+              placeholder="Describe the bug or feature (optional)"
+              value={body}
+              onChange={e => setBody(e.target.value)}
+              rows={4}
+              style={{ padding: 'var(--space-xs) var(--space-sm)', fontFamily: 'inherit', fontSize: 'var(--text-sm)', border: '1px solid var(--color-border)', borderRadius: 4, background: 'var(--color-bg-secondary)', color: 'var(--color-text)', resize: 'vertical' }}
+            />
+            {createIssue.error && (
+              <p style={{ color: 'var(--color-error)', fontSize: 'var(--text-sm)' }}>
+                Failed to create issue. Make sure your gh CLI is authenticated.
+              </p>
+            )}
+            <div>
+              <button type="submit" disabled={createIssue.isPending || !title.trim()}>
+                {createIssue.isPending ? 'Submitting…' : 'Submit'}
+              </button>
+            </div>
+          </form>
+        )}
+      </section>
+
+      <section className="settings-group">
+        <h3>Open Issues</h3>
+        {isLoading && <p className="empty-state">Loading issues…</p>}
+        {error && (
+          <p className="empty-state">Could not load issues. Make sure your gh CLI is authenticated.</p>
+        )}
+        {issues && issues.length === 0 && (
+          <p className="empty-state">No open issues.</p>
+        )}
+        {issues && issues.length > 0 && (
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
+            {issues.map((issue: DashboardIssue) => (
+              <li key={issue.number} style={{ borderBottom: '1px solid var(--color-border)', paddingBottom: 'var(--space-sm)' }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 'var(--space-xs)', flexWrap: 'wrap' }}>
+                  <a
+                    href={issue.html_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ fontWeight: 500 }}
+                  >
+                    #{issue.number} {issue.title}
+                  </a>
+                  {issue.labels.map(label => (
+                    <span
+                      key={label}
+                      style={{ fontSize: 'var(--text-xs)', padding: '1px 6px', borderRadius: 10, background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)', color: 'var(--color-text-light)' }}
+                    >
+                      {label}
+                    </span>
+                  ))}
+                </div>
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-light)', marginTop: 2 }}>
+                  by {issue.author}
+                  {issue.comments > 0 && ` · ${issue.comments} comment${issue.comments !== 1 ? 's' : ''}`}
+                  {' · '}
+                  {new Date(issue.created_at).toLocaleDateString()}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div style={{ marginTop: 'var(--space-sm)' }}>
+          <a
+            href="https://github.com/richwhitjr/dashboard/issues"
+            target="_blank"
+            rel="noreferrer"
+            style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-light)' }}
+          >
+            View all issues on GitHub →
+          </a>
+        </div>
+      </section>
+    </>
   );
 }

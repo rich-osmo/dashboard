@@ -7,6 +7,7 @@ from typing import Optional
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from pydantic import BaseModel
 
 from app_config import get_prompt_context
 from config import get_github_repo
@@ -563,3 +564,57 @@ def get_prioritized_github(
             return data
 
     return {"items": []}
+
+
+DASHBOARD_REPO = "richwhitjr/dashboard"
+
+
+@router.get("/dashboard-issues")
+def get_dashboard_issues():
+    """Return open issues from the richwhitjr/dashboard repo."""
+    headers = _get_headers()
+    url = f"{GITHUB_API_BASE}/repos/{DASHBOARD_REPO}/issues"
+    params = {"state": "open", "per_page": 50}
+    with httpx.Client(timeout=15) as client:
+        resp = client.get(url, headers=headers, params=params)
+    if resp.status_code != 200:
+        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+    items = resp.json()
+    return [
+        {
+            "number": item["number"],
+            "title": item["title"],
+            "state": item["state"],
+            "html_url": item["html_url"],
+            "created_at": item.get("created_at", ""),
+            "updated_at": item.get("updated_at", ""),
+            "author": item.get("user", {}).get("login", ""),
+            "labels": [lb["name"] for lb in item.get("labels", [])],
+            "comments": item.get("comments", 0),
+            "body": item.get("body") or "",
+        }
+        for item in items
+        if "pull_request" not in item  # exclude PRs from issues list
+    ]
+
+
+class DashboardIssueCreate(BaseModel):
+    title: str
+    body: str
+    labels: list[str] = []
+
+
+@router.post("/dashboard-issues")
+def create_dashboard_issue(payload: DashboardIssueCreate):
+    """Create a new issue in the richwhitjr/dashboard repo."""
+    headers = _get_headers()
+    url = f"{GITHUB_API_BASE}/repos/{DASHBOARD_REPO}/issues"
+    data: dict = {"title": payload.title, "body": payload.body}
+    if payload.labels:
+        data["labels"] = payload.labels
+    with httpx.Client(timeout=15) as client:
+        resp = client.post(url, headers=headers, json=data)
+    if resp.status_code not in (200, 201):
+        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+    item = resp.json()
+    return {"number": item["number"], "html_url": item["html_url"], "title": item["title"]}

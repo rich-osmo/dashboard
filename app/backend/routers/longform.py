@@ -410,6 +410,79 @@ _SESSION_TO_LONGFORM_PROMPT = (
 )
 
 
+_AGENT_CONV_TO_LONGFORM_PROMPT = (
+    "You are converting an agent chat conversation into a well-structured blog post or document. "
+    "Given the raw conversation, produce a JSON object with two fields:\n"
+    '  "title": a compelling title (5-15 words)\n'
+    '  "body": a clean, well-structured markdown document\n\n'
+    "The body should:\n"
+    "- Extract the key insights, decisions, and information from the conversation\n"
+    "- Remove conversational filler and redundancy\n"
+    "- Organize into logical sections with headings where appropriate\n"
+    "- Use code blocks for any relevant code snippets\n"
+    "- Be written in a professional but accessible tone\n"
+    "Return ONLY valid JSON, no markdown fences."
+)
+
+
+@router.post("/from-agent-conversation/{conv_id}")
+def create_from_agent_conversation(conv_id: int):
+    """Create a longform post from an agent chat conversation, using AI to clean it up."""
+    with get_db_connection(readonly=True) as db:
+        conv = db.execute("SELECT * FROM agent_conversations WHERE id = ?", (conv_id,)).fetchone()
+        if not conv:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        msgs = db.execute(
+            "SELECT role, content FROM agent_messages WHERE conversation_id = ? ORDER BY created_at",
+            (conv_id,),
+        ).fetchall()
+
+    conv = dict(conv)
+    lines = []
+    for msg in msgs:
+        role = "You" if msg["role"] == "user" else "Agent"
+        lines.append(f"**{role}:** {msg['content']}")
+    plain_text = "\n\n".join(lines)
+
+    title = conv.get("title", "Untitled Chat")
+    body = plain_text
+
+    if plain_text.strip():
+        try:
+            from ai_client import generate
+
+            text_input = plain_text[-12000:] if len(plain_text) > 12000 else plain_text
+            ai_text = generate(
+                system_prompt=_AGENT_CONV_TO_LONGFORM_PROMPT,
+                user_message=f"Convert this agent conversation to a document:\n\n{text_input}",
+                json_mode=True,
+                temperature=0.3,
+            )
+            if ai_text:
+                result = json.loads(ai_text)
+                if isinstance(result, dict):
+                    title = result.get("title", title)
+                    body = result.get("body", body)
+        except Exception as e:
+            logger.warning(f"AI agent-conv-to-longform failed: {e}")
+
+    word_count = len(body.split()) if body else 0
+
+    with get_write_db() as db:
+        cursor = db.execute(
+            "INSERT INTO longform_posts (title, body, status, word_count) VALUES (?, ?, ?, ?)",
+            (title, body, "draft", word_count),
+        )
+        post_id = cursor.lastrowid
+        db.commit()
+
+        row = db.execute("SELECT * FROM longform_posts WHERE id = ?", (post_id,)).fetchone()
+        result = _post_to_dict(db, row)
+    rebuild_fts_table("fts_longform")
+    bump("longform")
+    return result
+
+
 @router.post("/from-session/{session_id}")
 def create_from_session(session_id: int):
     """Create a longform post from a saved Claude session, using AI to clean it up."""

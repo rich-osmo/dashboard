@@ -40,7 +40,7 @@ start: venv
 	@if python3 -c "import json,os;p=os.path.join(os.environ.get('DASHBOARD_DATA_DIR',os.path.expanduser('~/.personal-dashboard')),'config.json');c=json.load(open(p));exit(0 if c.get('connectors',{}).get('whatsapp',{}).get('enabled') else 1)" 2>/dev/null; then \
 		lsof -ti:3001 | xargs kill -9 2>/dev/null || true; \
 		(cd app/whatsapp && npm install --silent); \
-		cd app/whatsapp && node index.js > /tmp/dashboard-whatsapp.log 2>&1 & \
+		(cd app/whatsapp && node index.js > /tmp/dashboard-whatsapp.log 2>&1 &); \
 		sleep 2; \
 		curl -sf http://localhost:3001/status > /dev/null && echo "WhatsApp sidecar running on :3001" || echo "WhatsApp sidecar failed — check /tmp/dashboard-whatsapp.log"; \
 	fi
@@ -228,7 +228,7 @@ whatsapp:
 	@if python3 -c "import json,os;p=os.path.join(os.environ.get('DASHBOARD_DATA_DIR',os.path.expanduser('~/.personal-dashboard')),'config.json');c=json.load(open(p));exit(0 if c.get('connectors',{}).get('whatsapp',{}).get('enabled') else 1)" 2>/dev/null; then \
 		lsof -ti:3001 | xargs kill -9 2>/dev/null || true; \
 		(cd app/whatsapp && npm install --silent); \
-		cd app/whatsapp && node index.js > /tmp/dashboard-whatsapp.log 2>&1 & \
+		(cd app/whatsapp && node index.js > /tmp/dashboard-whatsapp.log 2>&1 &); \
 		sleep 2; \
 		curl -sf http://localhost:3001/status > /dev/null && echo "WhatsApp sidecar running on :3001" || echo "WhatsApp sidecar failed — check /tmp/dashboard-whatsapp.log"; \
 	fi

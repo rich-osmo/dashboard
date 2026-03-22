@@ -10,6 +10,7 @@ import shutil
 import signal
 import struct
 import termios
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
@@ -57,7 +58,12 @@ def _build_system_prompt() -> str:
     profile = get_profile()
     user_name = profile.get("user_name", "").strip()
 
+    _now = datetime.now()
+    _today_str = _now.strftime("%A, %B %d, %Y")
+    _time_str = _now.strftime("%I:%M %p")
+
     prompt = (
+        f"Today is {_today_str} and the current time is {_time_str}. "
         f"You are the executive assistant and strategic thought partner {ctx}. "
         "You have full access to the user's dashboard -- calendar, email, Slack, Notion, "
         "notes, team files, and Granola meeting transcripts. Be direct, structured, and "
@@ -101,7 +107,13 @@ def _build_system_prompt() -> str:
         with get_db_connection(readonly=True) as db:
             row = db.execute("SELECT summary_text, generated_at FROM memory_summary WHERE id = 1").fetchone()
         if row and row["summary_text"]:
-            prompt += f"\n\n--- Memory (as of {row['generated_at']}) ---\n" + row["summary_text"]
+            try:
+                generated_dt = datetime.fromisoformat(row["generated_at"])
+                hours_ago = int((datetime.now() - generated_dt).total_seconds() / 3600)
+                stale_note = f" — {hours_ago}h old" if hours_ago > 1 else ""
+            except Exception:
+                stale_note = ""
+            prompt += f"\n\n--- Memory (as of {row['generated_at']}{stale_note}) ---\n" + row["summary_text"]
             memory_injected = True
     except Exception:
         pass
@@ -111,7 +123,14 @@ def _build_system_prompt() -> str:
             with get_db_connection(readonly=True) as db:
                 row = db.execute("SELECT context_text, generated_at FROM cached_status_context WHERE id = 1").fetchone()
             if row and row["context_text"]:
-                prompt += f"\n\n--- Current Status (as of {row['generated_at']}) ---\n" + row["context_text"]
+                try:
+                    generated_dt = datetime.fromisoformat(row["generated_at"])
+                    hours_ago = int((datetime.now() - generated_dt).total_seconds() / 3600)
+                    stale_note = f" — {hours_ago}h old" if hours_ago > 1 else ""
+                except Exception:
+                    stale_note = ""
+                status_header = f"\n\n--- Current Status (as of {row['generated_at']}{stale_note}) ---\n"
+                prompt += status_header + row["context_text"]
         except Exception:
             pass  # Table may not exist yet or be empty
 

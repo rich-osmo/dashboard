@@ -939,7 +939,7 @@ tbody tr:last-child td {
 /* Note items */
 .note-item {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-sm);
   padding: var(--space-sm) 0;
   border-bottom: 1px solid var(--color-border);
@@ -949,9 +949,35 @@ tbody tr:last-child td {
   border-bottom: none;
 }
 
-.note-item input[type="checkbox"] {
-  margin-top: 4px;
-  accent-color: var(--color-accent);
+.complete-btn {
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-border);
+  background: transparent;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s, border-color 0.1s;
+  padding: 0;
+  margin-right: 3px;
+}
+
+.note-item:hover .complete-btn,
+.issue-item:hover .complete-btn {
+  opacity: 1;
+}
+
+.complete-btn:hover {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  opacity: 1;
+}
+
+.complete-btn.done {
+  opacity: 1;
+  background: var(--color-accent);
+  border-color: var(--color-accent);
 }
 
 .note-item.done .note-text {
@@ -998,7 +1024,7 @@ tbody tr:last-child td {
 /* Issue items */
 .issue-item {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-sm);
   padding: var(--space-sm) 0;
   border-bottom: 1px solid var(--color-border);
@@ -1008,10 +1034,6 @@ tbody tr:last-child td {
   border-bottom: none;
 }
 
-.issue-item input[type="checkbox"] {
-  margin-top: 4px;
-  accent-color: var(--color-accent);
-}
 
 .issue-title-row {
   flex: 1;
@@ -2329,7 +2351,7 @@ a.dashboard-item-link:hover .dashboard-item-title {
 
 .dashboard-item-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-xs);
   border-bottom: 1px solid var(--color-border);
 }
@@ -6586,6 +6608,7 @@ span.news-item-title {
 /* --- Messages (flat editorial style) --- */
 
 .agent-message {
+  position: relative;
   line-height: 1.5;
 }
 
@@ -6622,6 +6645,31 @@ span.news-item-title {
 .agent-message + .agent-message {
   padding-top: var(--space-md);
   border-top: 1px solid var(--color-border);
+}
+
+.agent-message-copy {
+  position: absolute;
+  top: 0;
+  right: 0;
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  line-height: 1.4;
+}
+
+.agent-message:hover .agent-message-copy {
+  opacity: 1;
+}
+
+.agent-message-copy:hover {
+  color: var(--color-text);
+  background: var(--color-bg-hover);
 }
 
 /* --- Tool call indicators --- */

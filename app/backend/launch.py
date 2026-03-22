@@ -151,6 +151,7 @@ if __name__ == "__main__":
             width=1280,
             height=860,
             min_size=(800, 600),
+            easy_drag=False,
         )
         log.info("Starting pywebview event loop")
         webview.start()

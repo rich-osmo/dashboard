@@ -7,7 +7,9 @@ import {
   useUpdateAgentConversation,
   useDeleteAgentConversation,
   useSaveAgentConversation,
+  useCreateLongformFromAgentConversation,
 } from '../api/hooks';
+import { useNavigate } from 'react-router-dom';
 import { MarkdownRenderer } from '../components/shared/MarkdownRenderer';
 import { TimeAgo } from '../components/shared/TimeAgo';
 import type { AgentMessage, AgentToolCall } from '../api/types';
@@ -66,6 +68,15 @@ function ToolCallDisplay({ tc, defaultExpanded }: { tc: AgentToolCall | Streamin
 
 function MessageBubble({ msg }: { msg: AgentMessage }) {
   const isUser = msg.role === 'user';
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(msg.content).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
   return (
     <div className={`agent-message ${isUser ? 'agent-message-user' : 'agent-message-assistant'}`}>
       <div className="agent-message-role">{isUser ? 'You' : 'Agent'}</div>
@@ -79,6 +90,13 @@ function MessageBubble({ msg }: { msg: AgentMessage }) {
       <div className="agent-message-content">
         {isUser ? <p>{msg.content}</p> : <MarkdownRenderer content={msg.content} />}
       </div>
+      <button
+        className="agent-message-copy"
+        onClick={handleCopy}
+        title="Copy"
+      >
+        {copied ? '✓' : '⎘'}
+      </button>
     </div>
   );
 }
@@ -132,13 +150,22 @@ function persistTabs(tabs: Tab[], activeTabId: string | null, nextId: number) {
 
 let nextTabId = loadPersistedTabs().nextId;
 
+function buildMarkdown(messages: AgentMessage[]): string {
+  return messages
+    .map((m) => `**${m.role === 'user' ? 'You' : 'Agent'}:** ${m.content}`)
+    .join('\n\n---\n\n');
+}
+
 export function AgentPage() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: savedConversations } = useAgentConversations();
   const createConversation = useCreateAgentConversation();
   const updateConversation = useUpdateAgentConversation();
   const deleteConversation = useDeleteAgentConversation();
   const saveConversation = useSaveAgentConversation();
+  const createLongformFromConv = useCreateLongformFromAgentConversation();
+  const [copyLabel, setCopyLabel] = useState<'Copy' | 'Copied!'>('Copy');
 
   const persisted = loadPersistedTabs();
   const [tabs, setTabs] = useState<Tab[]>(persisted.tabs);
@@ -246,6 +273,38 @@ export function AgentPage() {
       }
     }
   }, [activeTab, titleValue, updateTab, updateConversation]);
+
+  // ---------------------------------------------------------------------------
+  // Copy / Download / Save as draft
+  // ---------------------------------------------------------------------------
+
+  const handleCopy = useCallback(() => {
+    if (!messages?.length) return;
+    const text = buildMarkdown(messages);
+    navigator.clipboard.writeText(text).then(() => {
+      setCopyLabel('Copied!');
+      setTimeout(() => setCopyLabel('Copy'), 2000);
+    });
+  }, [messages]);
+
+  const handleDownload = useCallback(() => {
+    if (!messages?.length) return;
+    const text = buildMarkdown(messages);
+    const filename = `${(activeTab?.label ?? 'chat').replace(/[^a-z0-9]/gi, '-').toLowerCase()}.md`;
+    const blob = new Blob([text], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [messages, activeTab]);
+
+  const handleSaveAsDraft = useCallback(async () => {
+    if (!activeConvId) return;
+    const post = await createLongformFromConv.mutateAsync(activeConvId);
+    navigate(`/longform?postId=${post.id}`);
+  }, [activeConvId, createLongformFromConv, navigate]);
 
   // ---------------------------------------------------------------------------
   // Send message
@@ -401,6 +460,32 @@ export function AgentPage() {
             />
           )}
         </div>
+        {messages && messages.length > 0 && (
+          <div style={{ display: 'flex', gap: 'var(--space-xs)' }}>
+            <button
+              className="auth-action-btn"
+              onClick={handleCopy}
+              title="Copy conversation as markdown"
+            >
+              {copyLabel}
+            </button>
+            <button
+              className="auth-action-btn"
+              onClick={handleDownload}
+              title="Download as markdown file"
+            >
+              Download
+            </button>
+            <button
+              className="auth-action-btn"
+              onClick={handleSaveAsDraft}
+              disabled={!activeConvId || createLongformFromConv.isPending}
+              title="Summarize and save as longform draft"
+            >
+              {createLongformFromConv.isPending ? 'Saving...' : 'Save as Draft'}
+            </button>
+          </div>
+        )}
         {activeTab && activeTab.convId !== null && !activeTab.saved && (
           <button
             className="auth-action-btn"

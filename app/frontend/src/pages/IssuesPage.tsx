@@ -155,11 +155,10 @@ function IssueItem({
         onClick={onToggleExpand}
         style={{ cursor: 'pointer' }}
       >
-        <input
-          type="checkbox"
-          checked={issue.status === 'done'}
-          onClick={(e) => e.stopPropagation()}
-          onChange={() => onUpdate({ status: issue.status === 'done' ? 'open' : 'done' })}
+        <button
+          className={`complete-btn${issue.status === 'done' ? ' done' : ''}`}
+          onClick={(e) => { e.stopPropagation(); onUpdate({ status: issue.status === 'done' ? 'open' : 'done' }); }}
+          title="Mark done"
         />
         <span className={`issue-size-badge size-${issue.tshirt_size}`}>
           {SIZE_LABELS[issue.tshirt_size] || 'M'}

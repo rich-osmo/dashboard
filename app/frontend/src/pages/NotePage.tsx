@@ -63,10 +63,10 @@ function NoteItem({
       id={`note-${note.id}`}
       className={`note-item dashboard-item-row ${note.status === 'done' ? 'done' : ''}`}
     >
-      <input
-        type="checkbox"
-        checked={note.status === 'done'}
-        onChange={onToggle}
+      <button
+        className={`complete-btn${note.status === 'done' ? ' done' : ''}`}
+        onClick={(e) => { e.stopPropagation(); onToggle(); }}
+        title="Mark done"
       />
       <div className="note-text">
         {editing ? (
