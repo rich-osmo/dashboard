@@ -107,8 +107,9 @@ function unifyMeetings(
 function formatRelativeDate(dateStr: string): string {
   const date = new Date(dateStr);
   const now = new Date();
-  const diffMs = date.getTime() - now.getTime();
-  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dateMidnight = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffDays = Math.round((dateMidnight.getTime() - todayMidnight.getTime()) / (1000 * 60 * 60 * 24));
 
   if (diffDays === 0) return 'today';
   if (diffDays === 1) return 'tomorrow';
@@ -778,16 +779,11 @@ export function PersonPage() {
             </form>
             {oneOnOneNotes.length > 0 ? (
               oneOnOneNotes.map((note) => (
-                <div key={note.id} className="note-item">
-                  <input
-                    type="checkbox"
-                    checked={note.status === 'done'}
-                    onChange={() =>
-                      updateNote.mutate({
-                        id: note.id,
-                        status: note.status === 'done' ? 'open' : 'done',
-                      })
-                    }
+                <div key={note.id} className={`note-item${note.status === 'done' ? ' done' : ''}`}>
+                  <button
+                    className={`complete-btn${note.status === 'done' ? ' done' : ''}`}
+                    onClick={() => updateNote.mutate({ id: note.id, status: note.status === 'done' ? 'open' : 'done' })}
+                    title="Mark done"
                   />
                   <span className="note-text">{note.text}</span>
                 </div>
@@ -854,16 +850,11 @@ export function PersonPage() {
             </form>
             {otherNotes.length > 0 ? (
               otherNotes.map((note) => (
-                <div key={note.id} className="note-item">
-                  <input
-                    type="checkbox"
-                    checked={note.status === 'done'}
-                    onChange={() =>
-                      updateNote.mutate({
-                        id: note.id,
-                        status: note.status === 'done' ? 'open' : 'done',
-                      })
-                    }
+                <div key={note.id} className={`note-item${note.status === 'done' ? ' done' : ''}`}>
+                  <button
+                    className={`complete-btn${note.status === 'done' ? ' done' : ''}`}
+                    onClick={() => updateNote.mutate({ id: note.id, status: note.status === 'done' ? 'open' : 'done' })}
+                    title="Mark done"
                   />
                   <span className="note-text">{note.text}</span>
                 </div>
@@ -897,9 +888,9 @@ export function PersonPage() {
               >
                 <div style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'end' }}>
                   <select
+                    className="issue-select"
                     value={newLinkType}
                     onChange={(e) => setNewLinkType(e.target.value)}
-                    style={{ width: 'auto' }}
                   >
                     <option value="linkedin">LinkedIn</option>
                     <option value="twitter">Twitter / X</option>

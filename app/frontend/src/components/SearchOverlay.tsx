@@ -54,7 +54,7 @@ interface SearchOverlayProps {
 }
 
 type OverlayMode = 'search' | 'create-pick' | 'issue-size' | 'issue-priority' | 'input';
-type CreateType = 'thought' | 'issue';
+type CreateType = 'thought' | 'issue' | 'one-on-one';
 interface IssueAttrs { size: 's' | 'm' | 'l' | 'xl'; priority: 0 | 1 | 2 | 3; }
 
 export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProps) {
@@ -519,6 +519,15 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
         },
         { onSuccess: () => onSuccess(`Issue: ${trimmed}`) }
       );
+    } else if (createType === 'one-on-one') {
+      createNote.mutate(
+        {
+          text: `[1] ${trimmed}`,
+          person_ids: detected.employees.map((e) => e.id),
+          is_one_on_one: true,
+        },
+        { onSuccess: () => onSuccess(`1:1: ${trimmed}`) }
+      );
     } else {
       createNote.mutate(
         {
@@ -586,6 +595,10 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
         setMode('issue-size');
       } else if (e.key === 't') {
         setCreateType('thought');
+        setMode('input');
+        setTimeout(() => inputRef.current?.focus(), 0);
+      } else if (e.key === '1') {
+        setCreateType('one-on-one');
         setMode('input');
         setTimeout(() => inputRef.current?.focus(), 0);
       } else if (e.key === 'Escape' || e.key === 'Tab') {
@@ -741,6 +754,7 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
               {mode === 'issue-priority' && <>Issue &middot; {issueAttrs.size.toUpperCase()}</>}
               {mode === 'input' && createType === 'issue' && <>Issue &middot; {issueAttrs.size.toUpperCase()} &middot; P{issueAttrs.priority}</>}
               {mode === 'input' && createType === 'thought' && 'Thought'}
+              {mode === 'input' && createType === 'one-on-one' && '1:1 Topic'}
             </span>
           )}
           <input
@@ -759,6 +773,7 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
               mode === 'issue-size' ? '' :
               mode === 'issue-priority' ? '' :
               createType === 'issue' ? 'Issue title... (@name to link)' :
+              createType === 'one-on-one' ? '1:1 agenda item... (@name to tag person)' :
               'Type your thought... (@name to link)'
             }
             autoComplete="off"
@@ -784,7 +799,7 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
         {addedConfirmation ? (
           <div className="search-note-added">
             <span className="search-note-added-icon">&#x2713;</span>
-            <span>{addedConfirmation.startsWith('Issue:') ? 'Issue' : 'Thought'} added</span>
+            <span>{addedConfirmation.startsWith('Issue:') ? 'Issue' : addedConfirmation.startsWith('1:1:') ? '1:1 topic' : 'Thought'} added</span>
           </div>
         ) : mode === 'create-pick' ? (
           /* --- CREATE-PICK: type selection --- */
@@ -795,6 +810,9 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
               </button>
               <button className="search-picker-pill" onClick={() => { setCreateType('thought'); setMode('input'); setTimeout(() => inputRef.current?.focus(), 0); }}>
                 <kbd>t</kbd> Thought
+              </button>
+              <button className="search-picker-pill" onClick={() => { setCreateType('one-on-one'); setMode('input'); setTimeout(() => inputRef.current?.focus(), 0); }}>
+                <kbd>1</kbd> 1:1
               </button>
             </div>
             <div className="search-footer">
@@ -861,12 +879,13 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
                 <div className="search-note-help">
                   <p>
                     {createType === 'issue' ? 'Type the issue title.' :
-                     createType === 'thought' ? 'Type your thought.' :
-                     'Start typing your note.'}
+                     createType === 'one-on-one' ? 'Type the agenda item.' :
+                     'Type your thought.'}
                   </p>
                   <p className="search-note-help-hint">
                     <code>@name</code> to link to a person
                     {createType === 'thought' && <> &middot; <code>[1]</code> prefix for 1:1 topic</>}
+                    {createType === 'one-on-one' && <> &middot; tag a person to attach to their 1:1</>}
                   </p>
                 </div>
               )}

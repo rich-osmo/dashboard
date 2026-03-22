@@ -177,7 +177,7 @@ def get_briefing():
                 "id": r["id"],
                 "source": "notion",
                 "title": r["title"],
-                "subtitle": r.get("last_edited_by") or "",
+                "subtitle": "" if (r.get("last_edited_by") or "").count("-") >= 4 else (r.get("last_edited_by") or ""),
                 "time": r["last_edited_time"],
                 "url": r.get("url"),
             }

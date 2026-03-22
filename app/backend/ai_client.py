@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 # Default models per provider
 DEFAULT_MODELS = {
-    "gemini": "gemini-2.0-flash",
+    "gemini": "gemini-3.1-flash-lite-preview",
     "anthropic": "claude-sonnet-4-5",
     "openai": "gpt-5.4-mini",
 }

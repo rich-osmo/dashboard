@@ -329,6 +329,19 @@ export interface GitHubCodeSearchResult {
   text_matches?: { fragment: string }[];
 }
 
+export interface DashboardIssue {
+  number: number;
+  title: string;
+  state: string;
+  html_url: string;
+  created_at: string;
+  updated_at: string;
+  author: string;
+  labels: string[];
+  comments: number;
+  body: string;
+}
+
 export interface PrioritizedGitHubPR {
   id: string;
   number: number;

@@ -26,6 +26,7 @@ import type {
   GitHubSearchResult,
   GitHubCodeSearchResult,
   PrioritizedGitHubData,
+  DashboardIssue,
   MeetingNote,
   MeetingsResponse,
   SlackMessage,
@@ -677,6 +678,17 @@ export function useCreateLongformFromSession() {
   return useMutation({
     mutationFn: (sessionId: number) =>
       api.post<LongformPost>(`/longform/from-session/${sessionId}`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['longform'] });
+    },
+  });
+}
+
+export function useCreateLongformFromAgentConversation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (convId: number) =>
+      api.post<LongformPost>(`/longform/from-agent-conversation/${convId}`, {}),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['longform'] });
     },
@@ -1867,6 +1879,23 @@ export function useRefreshPrioritizedGitHub() {
         setTimeout(() => qc.invalidateQueries({ queryKey: ['github-prioritized'] }), 8000);
       }
     },
+  });
+}
+
+export function useDashboardIssues() {
+  return useQuery({
+    queryKey: ['dashboard-issues'],
+    queryFn: () => api.get<DashboardIssue[]>('/github/dashboard-issues'),
+    staleTime: 60_000,
+  });
+}
+
+export function useCreateDashboardIssue() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { title: string; body: string; labels: string[] }) =>
+      api.post<{ number: number; html_url: string; title: string }>('/github/dashboard-issues', body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['dashboard-issues'] }),
   });
 }
 

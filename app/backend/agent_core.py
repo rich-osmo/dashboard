@@ -7,7 +7,7 @@ and agentic chat loop that can be used by any channel.
 import json
 import logging
 import re
-from datetime import date
+from datetime import date, datetime
 
 import httpx
 
@@ -915,7 +915,12 @@ def build_system_prompt(channel_instructions: str = "") -> str:
     except Exception:
         pass
 
+    _now = datetime.now()
+    _today_str = _now.strftime("%A, %B %d, %Y")
+    _time_str = _now.strftime("%I:%M %p")
+
     prompt = (
+        f"Today is {_today_str} and the current time is {_time_str}. "
         f"You are a personal assistant {ctx}. "
         "You have access to tools that query and update the user's personal dashboard — a centralized system "
         "that aggregates calendar, email, Slack, Notion, Google Drive, GitHub, Ramp, notes, issues, "
@@ -971,7 +976,13 @@ def build_system_prompt(channel_instructions: str = "") -> str:
         with get_db_connection(readonly=True) as db:
             row = db.execute("SELECT context_text, generated_at FROM cached_status_context WHERE id = 1").fetchone()
         if row and row["context_text"]:
-            prompt += f"\n\n--- Current Status (as of {row['generated_at']}) ---\n" + row["context_text"]
+            try:
+                generated_dt = datetime.fromisoformat(row["generated_at"])
+                hours_ago = int((datetime.now() - generated_dt).total_seconds() / 3600)
+                stale_note = f" — {hours_ago}h old" if hours_ago > 1 else ""
+            except Exception:
+                stale_note = ""
+            prompt += f"\n\n--- Current Status (as of {row['generated_at']}{stale_note}) ---\n" + row["context_text"]
     except Exception:
         pass
 
