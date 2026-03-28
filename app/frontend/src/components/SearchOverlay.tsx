@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useSearch, useCreateNote, useCreateIssue, usePeople } from '../api/hooks';
+import { useSearch, useCreateNote, useCreateIssue, usePeople, useGitHubCodeSearch } from '../api/hooks';
 import { openExternal } from '../api/client';
 import { detectEmployees } from '../utils/detectEmployees';
 import { parseIssuePrefix } from '../utils/parseIssuePrefix';
@@ -36,7 +36,8 @@ const PAGE_COMMANDS: { label: string; sublabel: string; route: string; keywords:
   { label: 'Email', sublabel: 'Prioritized email', route: '/email', keywords: ['email', 'gmail', 'inbox', 'mail'] },
   { label: 'News', sublabel: 'News feed', route: '/news', keywords: ['news', 'feed'] },
   { label: 'People', sublabel: 'Coworkers, contacts, and org chart', route: '/people', keywords: ['people', 'coworkers', 'contacts', 'directory', 'team', 'org', 'chart'] },
-  { label: 'GitHub', sublabel: 'Pull requests and code', route: '/github', keywords: ['github', 'pr', 'pull', 'code'] },
+  { label: 'GitHub', sublabel: 'Pull requests and issues', route: '/github', keywords: ['github', 'pr', 'pull'] },
+  { label: 'Code Search', sublabel: 'Search code in repositories', route: '/code-search', keywords: ['code', 'search', 'repository', 'grep', 'find', 'github', 'source'] },
   { label: 'Claude', sublabel: 'Claude Code terminal', route: '/claude', keywords: ['claude', 'terminal', 'ai', 'personas', 'persona'] },
   { label: 'Agent', sublabel: 'AI chat with dashboard tools', route: '/agent', keywords: ['agent', 'ai', 'chat', 'conversation', 'assistant'] },
   { label: 'Sandbox', sublabel: 'Build mini web apps', route: '/sandbox', keywords: ['sandbox', 'apps', 'build', 'mini', 'web', 'app'] },
@@ -66,6 +67,7 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
   const [createType, setCreateType] = useState<CreateType>('thought');
   const [issueAttrs, setIssueAttrs] = useState<IssueAttrs>({ size: 's', priority: 1 });
   const [includeExternal, setIncludeExternal] = useState(false);
+  const [codeMode, setCodeMode] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [preview, setPreview] = useState<FlatResult | null>(null);
   const [addedConfirmation, setAddedConfirmation] = useState<string | null>(null);
@@ -151,12 +153,16 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
 
   const { data: localResults, isLoading: localLoading } = useSearch(
     debouncedQuery,
-    { sources: 'all', includeExternal: false, enabled: isOpen && mode === 'search' && debouncedQuery.length > 0 }
+    { sources: 'all', includeExternal: false, enabled: isOpen && mode === 'search' && !codeMode && debouncedQuery.length > 0 }
   );
 
   const { data: externalResults, isLoading: externalLoading } = useSearch(
     debouncedQuery,
-    { sources: 'all', includeExternal: true, enabled: isOpen && mode === 'search' && includeExternal && debouncedQuery.length > 1 }
+    { sources: 'all', includeExternal: true, enabled: isOpen && mode === 'search' && !codeMode && includeExternal && debouncedQuery.length > 1 }
+  );
+
+  const codeSearchData = useGitHubCodeSearch(
+    isOpen && mode === 'search' && codeMode && debouncedQuery.trim().length > 1 ? debouncedQuery.trim() : ''
   );
 
   // Match page commands against current query
@@ -173,6 +179,28 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
   // Flatten all results into a single navigable list
   const flatResults: FlatResult[] = useMemo(() => {
     const flat: FlatResult[] = [];
+
+    // --- CODE MODE: only show code search results ---
+    if (codeMode) {
+      if (codeSearchData.data?.items) {
+        for (const item of codeSearchData.data.items.slice(0, 10)) {
+          const parts = item.path.split('/');
+          const filename = parts.pop() ?? item.path;
+          const dir = parts.join('/');
+          const fragment = item.text_matches?.[0]?.fragment?.trim() ?? '';
+          flat.push({
+            category: 'Code',
+            type: 'code',
+            id: `code-${item.path}`,
+            label: filename,
+            sublabel: [item.repo, dir].filter(Boolean).join(' \u00b7 '),
+            snippet: fragment,
+            navigateTo: `/code-search?q=${encodeURIComponent(query.trim())}`,
+          });
+        }
+      }
+      return flat;
+    }
 
     // Page commands first
     for (const page of matchedPages) {
@@ -420,7 +448,7 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
     }
 
     return flat;
-  }, [localResults, externalResults, includeExternal, matchedPages, query, onHelpOpen]);
+  }, [localResults, externalResults, includeExternal, codeMode, codeSearchData.data, matchedPages, query, onHelpOpen]);
 
   // Reset selection when results change
   useEffect(() => {
@@ -440,6 +468,7 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
       setAddedConfirmation(null);
       setMentionQuery(null);
       setMentionStart(-1);
+      setCodeMode(false);
       setTimeout(() => inputRef.current?.focus(), 0);
     }
   }, [isOpen]);
@@ -587,6 +616,16 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
     if ((e.metaKey || e.ctrlKey) && e.key === 'e') {
       e.preventDefault();
       setIncludeExternal(prev => !prev);
+      return;
+    }
+
+    // Cmd+/: toggle code search mode
+    if ((e.metaKey || e.ctrlKey) && e.key === '/') {
+      e.preventDefault();
+      setCodeMode(prev => !prev);
+      setQuery('');
+      setDebouncedQuery('');
+      setTimeout(() => inputRef.current?.focus(), 0);
       return;
     }
 
@@ -744,13 +783,17 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
     globalIdx++;
   }
 
-  const isLoading = localLoading || (includeExternal && externalLoading);
+  const isLoading = codeMode
+    ? (codeSearchData.isLoading && debouncedQuery.length > 1)
+    : (localLoading || (includeExternal && externalLoading));
 
   return (
     <div className="search-overlay" onClick={onClose}>
-      <div className={`search-modal ${mode !== 'search' ? 'search-modal--note-mode' : ''}`} onClick={e => e.stopPropagation()}>
+      <div className={`search-modal ${mode !== 'search' ? 'search-modal--note-mode' : ''} ${codeMode ? 'search-modal--code-mode' : ''}`} onClick={e => e.stopPropagation()}>
         <div className="search-input-row">
-          {mode !== 'search' && (
+          {codeMode ? (
+            <span className="search-mode-badge search-mode-badge--code">Code</span>
+          ) : mode !== 'search' ? (
             <span className="search-mode-badge">
               {mode === 'create-pick' && 'Create'}
               {mode === 'issue-size' && 'Issue'}
@@ -759,10 +802,10 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
               {mode === 'input' && createType === 'thought' && 'Thought'}
               {mode === 'input' && createType === 'one-on-one' && '1:1 Topic'}
             </span>
-          )}
+          ) : null}
           <input
             ref={inputRef}
-            className="search-input"
+            className={`search-input ${codeMode ? 'search-input--code' : ''}`}
             value={query}
             onChange={e => {
               setQuery(e.target.value);
@@ -771,6 +814,7 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
             }}
             onKeyDown={handleKeyDown}
             placeholder={
+              codeMode ? 'Search code… e.g. def execute_tool' :
               mode === 'search' ? 'Search or jump to...' :
               mode === 'create-pick' ? '' :
               mode === 'issue-size' ? '' :
@@ -783,7 +827,7 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
             readOnly={mode === 'create-pick' || mode === 'issue-size' || mode === 'issue-priority'}
             spellCheck={mode === 'input'}
           />
-          {mode === 'search' && (
+          {mode === 'search' && !codeMode && (
             <button
               className={`search-external-toggle ${includeExternal ? 'active' : ''}`}
               onClick={() => setIncludeExternal(prev => !prev)}
@@ -795,7 +839,7 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
         </div>
 
         {mode === 'search' && isLoading && query && (
-          <div className="search-loading">Searching...</div>
+          <div className="search-loading">{codeMode ? 'Searching code…' : 'Searching...'}</div>
         )}
 
         {/* Confirmation after adding */}
@@ -970,6 +1014,11 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
         ) : (
           <>
             <div className="search-results" ref={listRef}>
+              {codeMode && !query && (
+                <div className="search-code-mode-hint">
+                  Type to search code across your repositories
+                </div>
+              )}
               {query && !isLoading && flatResults.length === 0 && (
                 <div className="search-empty">No results for &ldquo;{query}&rdquo;</div>
               )}
@@ -982,7 +1031,7 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
                     return (
                       <div
                         key={`${item.type}-${item.id}`}
-                        className={`search-result-item ${idx === selectedIndex ? 'selected' : ''} ${item.type === 'add_note' ? 'add-note-item' : ''}`}
+                        className={`search-result-item ${idx === selectedIndex ? 'selected' : ''} ${item.type === 'add_note' ? 'add-note-item' : ''} ${item.type === 'code' ? 'search-result-item--code' : ''}`}
                         onMouseEnter={() => setSelectedIndex(idx)}
                         onClick={() => handleSelect(item)}
                       >
@@ -1016,21 +1065,37 @@ export function SearchOverlay({ isOpen, onClose, onHelpOpen }: SearchOverlayProp
 
             <div className="search-footer">
               <span className="search-hint">
-                <kbd>&uarr;</kbd><kbd>&darr;</kbd> navigate
-                &nbsp;&middot;&nbsp;
-                <kbd>Enter</kbd> open
-                {query.trim() && (
+                {codeMode ? (
                   <>
+                    <kbd>&uarr;</kbd><kbd>&darr;</kbd> navigate
                     &nbsp;&middot;&nbsp;
-                    <kbd>&#x2318;Enter</kbd> add thought
+                    <kbd>Enter</kbd> open full search
+                    &nbsp;&middot;&nbsp;
+                    <kbd>&#x2318;/</kbd> exit code search
+                    &nbsp;&middot;&nbsp;
+                    <kbd>Esc</kbd> close
+                  </>
+                ) : (
+                  <>
+                    <kbd>&uarr;</kbd><kbd>&darr;</kbd> navigate
+                    &nbsp;&middot;&nbsp;
+                    <kbd>Enter</kbd> open
+                    {query.trim() && (
+                      <>
+                        &nbsp;&middot;&nbsp;
+                        <kbd>&#x2318;Enter</kbd> add thought
+                      </>
+                    )}
+                    &nbsp;&middot;&nbsp;
+                    <kbd>Tab</kbd> create
+                    &nbsp;&middot;&nbsp;
+                    <kbd>&#x2318;E</kbd> external
+                    &nbsp;&middot;&nbsp;
+                    <kbd>&#x2318;/</kbd> code search
+                    &nbsp;&middot;&nbsp;
+                    <kbd>Esc</kbd> close
                   </>
                 )}
-                &nbsp;&middot;&nbsp;
-                <kbd>Tab</kbd> create
-                &nbsp;&middot;&nbsp;
-                <kbd>&#x2318;E</kbd> external
-                &nbsp;&middot;&nbsp;
-                <kbd>Esc</kbd> close
               </span>
             </div>
           </>

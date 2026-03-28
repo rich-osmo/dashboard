@@ -30,7 +30,8 @@ A local-first personal dashboard that centralizes your email, calendar, Slack, N
 - **Meetings**: Calendar integration with cancelled/declined event filtering, plus Granola transcript sync
 - **Ramp Finance**: Expense tracking with AI-prioritized transactions, bills, vendors, and project budgets with incremental sync
 - **Embedded Claude Code**: Full Claude Code CLI terminal with persona and session management
-- **Global Search**: `Cmd+K` command palette to search across all data sources, with quick-create (Tab to create notes, thoughts, or issues)
+- **Code Search**: Dedicated `/code-search` module for searching code across GitHub repositories — file cards with match fragments, full-file modal viewer, and direct GitHub links. Also available in the `Cmd+K` overlay via `Cmd+/` toggle and accessible to the agent and Claude Code
+- **Global Search**: `Cmd+K` command palette to search across all data sources, with quick-create (Tab to create notes, thoughts, or issues), external toggle (`Cmd+E`), and code search toggle (`Cmd+/`)
 - **Plugin Connectors**: Enable/disable services as needed — Google, Microsoft 365, Slack, Notion, GitHub, Ramp, Granola, and more
 - **Keyboard-Driven**: Vim-style navigation, chord shortcuts, undo (`u`), and a full shortcut help overlay
 
@@ -130,6 +131,7 @@ Each connector includes setup instructions in the app. Enable/disable them in Se
 | `/notion` | Notion | Recently edited pages |
 | `/drive` | Drive | Google Drive or OneDrive files with Gemini AI relevance ranking |
 | `/github` | GitHub | Pull requests and issues |
+| `/code-search` | Code Search | Search code across GitHub repositories |
 | `/ramp` | Ramp | Transactions, bills, and project tracking with AI ranking |
 | `/news` | News | Infinite scroll aggregated news |
 | `/claude` | Claude Code | Embedded CLI terminal |

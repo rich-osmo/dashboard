@@ -108,6 +108,62 @@ TOOLS = [
         },
     },
     {
+        "name": "search_code",
+        "description": (
+            "Search code across GitHub repositories. Returns file paths, code fragments, and GitHub links. "
+            "Use for: finding function definitions, understanding where code lives, searching for patterns. "
+            "Scope to a repo with 'repo:owner/name' in the query (e.g. 'def foo repo:richwhitjr/dashboard')."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "q": {
+                    "type": "string",
+                    "description": "Code search query (e.g., 'def execute_tool repo:richwhitjr/dashboard')",
+                },
+                "per_page": {"type": "integer", "description": "Results per page (1-30, default 10)"},
+            },
+            "required": ["q"],
+        },
+    },
+    {
+        "name": "view_repo_file",
+        "description": (
+            "View the content of a file in a GitHub repository. Returns numbered lines and a GitHub link. "
+            "Use start_line/end_line to focus on a specific section."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "repo": {"type": "string", "description": "Repository as owner/repo (e.g., 'richwhitjr/dashboard')"},
+                "path": {"type": "string", "description": "File path in repo (e.g., 'app/backend/main.py')"},
+                "start_line": {"type": "integer", "description": "Start line number, 1-based (optional)"},
+                "end_line": {"type": "integer", "description": "End line number, 1-based (optional)"},
+                "ref": {"type": "string", "description": "Branch or commit ref (default: main)"},
+            },
+            "required": ["repo", "path"],
+        },
+    },
+    {
+        "name": "git_blame",
+        "description": (
+            "Run git blame on a file in the dashboard repo to see who wrote each line and when. "
+            "Returns author, date, commit hash, and code per line. Includes a GitHub blame URL."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "File path relative to repo root (e.g., 'app/backend/main.py')",
+                },
+                "start_line": {"type": "integer", "description": "Start line number, 1-based (optional)"},
+                "end_line": {"type": "integer", "description": "End line number, 1-based (optional)"},
+            },
+            "required": ["path"],
+        },
+    },
+    {
         "name": "search_obsidian",
         "description": "Search Obsidian vault notes by title, content, or tags",
         "input_schema": {
@@ -539,7 +595,8 @@ TOOLS = [
         "description": (
             "Run a read-only bash command and return its output. "
             "Use for: current time/date (`date`), file reads (`cat`, `ls`), "
-            "gh CLI queries (`gh pr list`, `gh issue list`), "
+            "gh CLI queries (`gh pr list`, `gh issue list`, `gh search code`), "
+            "git read commands (`git log`, `git show`, `git blame`, `git diff`), "
             "system info (`df -h`, `ps aux`, `env`), grep/find, and similar. "
             "Scripting interpreters (python, node, ruby, perl, etc.), sub-shells (bash, zsh), "
             "and write operations (rm, mv, cp, sudo, git commit/push, redirections, etc.) are blocked."
@@ -606,6 +663,50 @@ async def execute_tool(name: str, tool_input: dict) -> str:
                 if "state" in tool_input:
                     params["state"] = tool_input["state"]
                 r = await client.get("/api/github/search", params=params)
+            elif name == "search_code":
+                params = {"q": tool_input["q"]}
+                if "per_page" in tool_input:
+                    params["per_page"] = tool_input["per_page"]
+                r = await client.get("/api/github/search/code", params=params)
+            elif name == "view_repo_file":
+                params = {"repo": tool_input["repo"], "path": tool_input["path"]}
+                if "ref" in tool_input:
+                    params["ref"] = tool_input["ref"]
+                if "start_line" in tool_input:
+                    params["start_line"] = tool_input["start_line"]
+                if "end_line" in tool_input:
+                    params["end_line"] = tool_input["end_line"]
+                r = await client.get("/api/github/file", params=params)
+            elif name == "git_blame":
+                import subprocess as _sp
+
+                from config import get_github_repo as _get_github_repo
+
+                path = tool_input["path"]
+                start_line = tool_input.get("start_line")
+                end_line = tool_input.get("end_line")
+
+                cmd = "git blame --date=short"
+                if start_line or end_line:
+                    s = start_line or 1
+                    e_part = str(end_line) if end_line else ""
+                    cmd += f" -L {s},{e_part or 'EOF'}"
+                cmd += f" -- {path}"
+
+                try:
+                    result = _sp.run(cmd, shell=True, cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=30)
+                    if result.returncode != 0:
+                        err = result.stderr.strip() or "git blame failed"
+                        return json.dumps({"error": err})
+                    out = result.stdout.strip() or "(no output)"
+                    repo = _get_github_repo()
+                    if repo:
+                        out += f"\n\nGitHub blame: https://github.com/{repo}/blame/main/{path}"
+                    if len(out) > 8000:
+                        out = out[:8000] + "\n... (truncated)"
+                    return out
+                except _sp.TimeoutExpired:
+                    return json.dumps({"error": "git blame timed out"})
             elif name == "search_obsidian":
                 params = {"q": tool_input["q"]}
                 if "limit" in tool_input:

@@ -1,30 +1,27 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { useGitHubPulls, useGitHubSearch, useGitHubCodeSearch, useDismissPrioritizedItem, useCreateIssue, useAllGitHub, usePrioritizedGitHub, useRefreshPrioritizedGitHub, type AllTabSearchParams } from '../api/hooks';
+import { useGitHubPulls, useDismissPrioritizedItem, useCreateIssue, useAllGitHub, usePrioritizedGitHub, useRefreshPrioritizedGitHub, type AllTabSearchParams } from '../api/hooks';
 import { TimeAgo } from '../components/shared/TimeAgo';
 import { useFocusNavigation } from '../hooks/useFocusNavigation';
 import { KeyboardHints } from '../components/shared/KeyboardHints';
 import { InfiniteScrollSentinel } from '../components/shared/InfiniteScrollSentinel';
 import { ScoreBadge } from '../components/shared/PrioritizedSourceList';
 
-type Tab = 'priority' | 'reviews' | 'open' | 'search' | 'all';
-type SearchMode = 'prs' | 'code';
+type Tab = 'priority' | 'reviews' | 'open' | 'all';
 type NavigableItem = { number: number; title: string };
 
-const TABS: Tab[] = ['priority', 'reviews', 'open', 'search', 'all'];
+const TABS: Tab[] = ['priority', 'reviews', 'open', 'all'];
 
 const SCORE_OPTIONS = [3, 5, 6, 7, 8] as const;
 
 export function GitHubPage() {
   const [tab, setTab] = useState<Tab>('priority');
   const [minScore, setMinScore] = useState(6);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchMode, setSearchMode] = useState<SearchMode>('prs');
-  const [submittedQuery, setSubmittedQuery] = useState('');
   const dismiss = useDismissPrioritizedItem();
   const createIssue = useCreateIssue();
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
 
   // All-tab search state
+
   const [allSearchParams, setAllSearchParams] = useState<AllTabSearchParams>({});
   const [allLocalQuery, setAllLocalQuery] = useState('');
   const [allLocalAuthor, setAllLocalAuthor] = useState('');
@@ -45,8 +42,6 @@ export function GitHubPage() {
   const refresh = useRefreshPrioritizedGitHub();
   const reviewPulls = useGitHubPulls({ review_requested: true });
   const openPulls = useGitHubPulls({ state: 'open' });
-  const searchResults = useGitHubSearch(submittedQuery, searchMode === 'prs' ? 'pr' : undefined);
-  const codeResults = useGitHubCodeSearch(searchMode === 'code' ? submittedQuery : '');
 
   const prioritizedItems = prioritizedQuery.data?.items ?? [];
   const filteredPriority = prioritizedItems.filter(pr => pr.priority_score >= minScore);
@@ -89,11 +84,6 @@ export function GitHubPage() {
     return () => document.removeEventListener('keydown', handler);
   }, [tab]);
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmittedQuery(searchQuery.trim());
-  };
-
   // Debounce all-tab search params
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -128,7 +118,7 @@ export function GitHubPage() {
     <div ref={containerRef}>
       <h1>GitHub</h1>
       <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-md)' }}>
-        Pull Requests &amp; Code Search
+        Pull Requests &amp; Issues
       </p>
 
       <div className="github-tabs">
@@ -158,12 +148,6 @@ export function GitHubPage() {
           {openPulls.data?.count ? (
             <span className="github-tab-count">({openPulls.data.count})</span>
           ) : null}
-        </button>
-        <button
-          className={`github-tab ${tab === 'search' ? 'active' : ''}`}
-          onClick={() => setTab('search')}
-        >
-          Search
         </button>
         <button
           className={`github-tab ${tab === 'all' ? 'active' : ''}`}
@@ -273,93 +257,6 @@ export function GitHubPage() {
         </div>
       )}
 
-      {tab === 'search' && (
-        <div>
-          <form onSubmit={handleSearch} className="github-search-form">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search PRs, issues, or code..."
-              className="github-search-input"
-            />
-            <div className="github-search-mode">
-              <button
-                type="button"
-                className={`github-tab ${searchMode === 'prs' ? 'active' : ''}`}
-                onClick={() => setSearchMode('prs')}
-              >
-                Issues & PRs
-              </button>
-              <button
-                type="button"
-                className={`github-tab ${searchMode === 'code' ? 'active' : ''}`}
-                onClick={() => setSearchMode('code')}
-              >
-                Code
-              </button>
-            </div>
-          </form>
-
-          {searchMode === 'prs' && submittedQuery && (
-            <div className="github-pr-list">
-              {searchResults.isLoading && <p className="empty-state">Searching...</p>}
-              {searchResults.data && (
-                <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-sm)' }}>
-                  {searchResults.data.total} results
-                </p>
-              )}
-              {searchResults.data?.items.map((item) => (
-                <a
-                  key={item.number}
-                  className="dashboard-item dashboard-item-link"
-                  href={item.html_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <div className="dashboard-item-title">
-                    <span className="github-pr-number">#{item.number}</span>{' '}
-                    {item.title}
-                    {item.type === 'issue' && <span className="github-badge github-badge-issue">issue</span>}
-                  </div>
-                  <div className="dashboard-item-meta">
-                    {item.author} &middot; {item.state} &middot;{' '}
-                    <TimeAgo date={item.updated_at} />
-                  </div>
-                </a>
-              ))}
-            </div>
-          )}
-
-          {searchMode === 'code' && submittedQuery && (
-            <div className="github-pr-list">
-              {codeResults.isLoading && <p className="empty-state">Searching code...</p>}
-              {codeResults.data && (
-                <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-sm)' }}>
-                  {codeResults.data.total} results
-                </p>
-              )}
-              {codeResults.data?.items.map((item, i) => (
-                <a
-                  key={i}
-                  className="dashboard-item dashboard-item-link"
-                  href={item.html_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <div className="dashboard-item-title">{item.path}</div>
-                  {item.text_matches?.map((tm, j) => (
-                    <div key={j} className="github-code-fragment">
-                      {tm.fragment}
-                    </div>
-                  ))}
-                </a>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
       {tab === 'all' && (
         <div className="github-pr-list">
           <div className="all-search-bar">
@@ -434,7 +331,9 @@ export function GitHubPage() {
         ...(tab === 'priority' || tab === 'reviews' || tab === 'open' ? ['↑↓/j/k navigate', 'Enter open', 'd dismiss'] : []),
         ...(tab === 'reviews' || tab === 'open' ? ['e expand', 'i create issue'] : []),
         '[/] switch tabs',
+        'Code Search → g q or sidebar',
       ]} />
+
     </div>
   );
 }

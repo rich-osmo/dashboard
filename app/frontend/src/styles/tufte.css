@@ -3845,6 +3845,57 @@ span.news-item-title {
   line-height: 1.6;
 }
 
+/* ─── Code Search Mode in Search Overlay ─── */
+
+.search-modal--code-mode .search-input-row {
+  border-bottom-color: var(--color-text-muted);
+  border-bottom-width: 2px;
+}
+
+.search-mode-badge--code {
+  font-family: var(--font-mono);
+  font-variant: normal;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  border-color: var(--color-text-muted);
+}
+
+.search-input--code {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.search-code-mode-hint {
+  padding: var(--space-lg) var(--space-lg);
+  font-size: var(--text-sm);
+  color: var(--color-text-light);
+}
+
+/* Code result items in the overlay */
+.search-result-item--code .search-result-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.search-result-item--code .search-result-sublabel {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.search-result-item--code .search-result-snippet {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: var(--color-highlight);
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-xs) var(--space-md);
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
 /* ─── Fast-Create Picker Steps ─── */
 
 .search-create-picker {
@@ -4244,9 +4295,42 @@ span.news-item-title {
   border-color: var(--color-accent);
 }
 
-.github-search-mode {
-  display: flex;
-  gap: var(--space-xs);
+/* Segmented control — visually distinct from the outer tab strip */
+.github-search-segments {
+  display: inline-flex;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: var(--space-sm);
+}
+
+.github-search-segment {
+  background: none;
+  border: none;
+  border-right: 1px solid var(--color-border);
+  padding: 3px var(--space-md);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  letter-spacing: 0.01em;
+  transition: background 0.1s, color 0.1s;
+  line-height: 1.8;
+}
+
+.github-search-segment:last-child {
+  border-right: none;
+}
+
+.github-search-segment:hover {
+  background: var(--color-highlight);
+  color: var(--color-text);
+}
+
+.github-search-segment.active {
+  background: var(--color-text);
+  color: var(--color-bg);
+  font-weight: 500;
 }
 
 /* ─── All-tab search bar ─── */
@@ -4316,15 +4400,366 @@ span.news-item-title {
   font-family: var(--font-mono);
 }
 
-.github-code-fragment {
+/* ─── Code search result cards ─── */
+
+.github-code-result {
+  display: block;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  margin-bottom: var(--space-md);
+  overflow: hidden;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s;
+}
+
+.github-code-result:hover {
+  border-color: var(--color-text-muted);
+}
+
+.github-code-result:hover .github-code-result-header {
+  background: color-mix(in srgb, var(--color-highlight) 70%, var(--color-border) 30%);
+}
+
+.github-code-result-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-md);
+  background: var(--color-highlight);
+  border-bottom: 1px solid var(--color-border);
+  min-height: 32px;
+  align-items: center;
+}
+
+.github-code-result-path-dir {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--color-text-muted);
-  white-space: pre-wrap;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-height: 3em;
-  margin-top: var(--space-xs);
+  flex-shrink: 1;
+}
+
+.github-code-result-filename {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.github-code-result-match-count {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.github-code-fragments {
+  display: flex;
+  flex-direction: column;
+}
+
+.github-code-fragment {
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  white-space: pre;
+  overflow-x: auto;
+  color: var(--color-text);
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.github-code-fragment:last-child {
+  border-bottom: none;
+}
+
+/* Separator between multiple fragments from the same file */
+.github-code-fragment + .github-code-fragment {
+  border-top: 1px dashed var(--color-border);
+}
+
+/* Expand button and GitHub link in code result header */
+.github-code-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.github-code-expand-btn {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  padding: 1px 7px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  line-height: 1.6;
+  white-space: nowrap;
+  transition: border-color 0.1s, color 0.1s, background 0.1s;
+}
+
+.github-code-expand-btn:hover {
+  border-color: var(--color-text-muted);
+  color: var(--color-text);
+  background: var(--color-highlight);
+}
+
+.github-code-gh-link {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-muted);
+  text-decoration: none;
+  padding: 1px 7px;
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  line-height: 1.6;
+  white-space: nowrap;
+  transition: border-color 0.1s, color 0.1s;
+}
+
+.github-code-gh-link:hover {
+  border-color: var(--color-text-muted);
+  color: var(--color-text);
+}
+
+/* GitHub file modal — wider than meeting modal to fit code */
+.github-file-modal {
+  background: var(--color-bg);
+  max-width: 920px;
+  width: 95vw;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  position: relative;
+  overflow: hidden;
+}
+
+.github-file-modal-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-md);
+  background: var(--color-highlight);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+  min-height: 38px;
+}
+
+.github-file-modal-header .github-code-result-path-dir {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.github-file-modal-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.github-file-modal-lang {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-light);
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.github-file-modal-linecount {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.github-file-modal-body {
+  flex: 1;
+  overflow: auto;
+}
+
+/* Code area: gutter + code side by side, both pre elements share font/line-height */
+.github-file-modal-code-wrap {
+  display: flex;
+  min-width: max-content;
+}
+
+.github-file-modal-gutter {
+  flex-shrink: 0;
+  margin: 0;
+  padding: var(--space-md) var(--space-md) var(--space-md) var(--space-md);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.7;
+  color: var(--color-text-light);
+  text-align: right;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-highlight);
+  user-select: none;
+  white-space: pre;
+  min-width: 3em;
+}
+
+.github-file-modal-code {
+  flex: 1;
+  margin: 0;
+  padding: var(--space-md);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.7;
+  white-space: pre;
+  background: transparent;
+  color: var(--color-text);
+}
+
+.github-file-modal-code code {
+  font-family: inherit;
+  font-size: inherit;
+  background: transparent;
+}
+
+.github-file-modal-loading {
+  padding: var(--space-xl) var(--space-md);
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+/* ─── highlight.js theme (Tufte-compatible) ─── */
+
+.hljs { color: var(--color-text); background: transparent; }
+
+.hljs-comment,
+.hljs-quote         { color: #888; font-style: italic; }
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in,
+.hljs-name,
+.hljs-tag           { color: #0033b3; }
+
+.hljs-string,
+.hljs-attr,
+.hljs-selector-attr,
+.hljs-selector-pseudo { color: #067d17; }
+
+.hljs-number,
+.hljs-literal,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-addition      { color: #1750eb; }
+
+.hljs-title,
+.hljs-title.function_,
+.hljs-title.class_  { color: #00627a; }
+
+.hljs-type,
+.hljs-class         { color: #000080; }
+
+.hljs-deletion,
+.hljs-selector-id   { color: #a00000; }
+
+.hljs-meta,
+.hljs-meta .hljs-string { color: #808000; }
+
+.hljs-emphasis      { font-style: italic; }
+.hljs-strong        { font-weight: bold; }
+
+/* Search results count line */
+.github-search-results-count {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-md);
+  padding-bottom: var(--space-xs);
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* Repo label above each code result card */
+.github-code-result-repo {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-light);
+  padding: var(--space-xs) var(--space-md) 0;
+  letter-spacing: 0.02em;
+}
+
+/* Code search empty state */
+.code-search-empty-state {
+  margin-top: var(--space-2xl);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  max-width: 480px;
+}
+
+.code-search-empty-examples {
+  margin-top: var(--space-md);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.code-search-empty-examples span {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-light);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  padding: 2px var(--space-sm);
+}
+
+/* Pagination controls */
+.code-search-pagination {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin-top: var(--space-lg);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--color-border);
+}
+
+.code-search-page-btn {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text);
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  padding: 3px var(--space-sm);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.code-search-page-btn:hover:not(:disabled) {
+  border-color: var(--color-text-muted);
+  color: var(--color-text);
+}
+
+.code-search-page-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.code-search-page-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
 }
 
 /* ─── Help / Intro Page ─── */

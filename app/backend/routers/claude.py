@@ -16,6 +16,7 @@ from pathlib import Path
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from app_config import get_profile, get_prompt_context
+from config import get_github_repo
 from database import get_db_connection
 
 logger = logging.getLogger(__name__)
@@ -99,6 +100,23 @@ def _build_system_prompt() -> str:
             if user_name
             else ""
         )
+    )
+
+    # Inject code repository guidance
+    github_repo = get_github_repo()
+    repo_base = f"https://github.com/{github_repo}" if github_repo else "https://github.com/owner/repo"
+    prompt += (
+        "\n\n## Code Repository Access"
+        "\nYou can search and browse code directly. When answering questions about code:"
+        '\n- **Search code**: Use `gh search code "query"` or `curl -s http://localhost:8000/api/github/search/code?q=...`'
+        "\n- **View files**: Use `cat path/to/file` (working dir is repo root) or `curl -s 'http://localhost:8000/api/github/file?repo=REPO&path=PATH'`"
+        "\n- **Git blame**: Use `git blame -L START,END -- path/to/file` to see authorship line by line"
+        "\n- **Git log**: Use `git log --oneline -20 path/to/file` to see recent changes to a file"
+        f"\n\n**Always include GitHub links when referencing code** (repo: `{github_repo or 'owner/repo'}`):"
+        f"\n- File: `[filename.py]({repo_base}/blob/main/path/to/file.py)`"
+        f"\n- Lines: `[view lines 42-51]({repo_base}/blob/main/path/to/file.py#L42-L51)`"
+        f"\n- Blame: `[blame view]({repo_base}/blame/main/path/to/file.py)`"
+        "\n\nStructure code answers as: explanation → code block → GitHub link → blame/authorship if relevant."
     )
 
     # Append memory summary (persistent, history-aware) or fall back to status context

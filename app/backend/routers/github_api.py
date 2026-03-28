@@ -1,5 +1,6 @@
 """Live GitHub API endpoints for PR browsing and repo search."""
 
+import base64
 import json
 import logging
 from datetime import datetime
@@ -331,6 +332,7 @@ def search_github(
 def search_code(
     q: str = Query(..., description="Code search query"),
     per_page: int = Query(20, ge=1, le=50),
+    page: int = Query(1, ge=1),
 ):
     """Search code in the repo."""
     headers = _get_headers()
@@ -345,6 +347,7 @@ def search_code(
                 params={
                     "q": f"{q} repo:{_require_repo()}",
                     "per_page": per_page,
+                    "page": page,
                 },
             )
             resp.raise_for_status()
@@ -353,15 +356,20 @@ def search_code(
                 {
                     "name": item["name"],
                     "path": item["path"],
+                    "repo": item.get("repository", {}).get("full_name", ""),
                     "html_url": item["html_url"],
                     "text_matches": [{"fragment": tm.get("fragment", "")} for tm in item.get("text_matches", [])],
                 }
                 for item in data.get("items", [])
             ]
+            total = data.get("total_count", 0)
             return {
                 "query": q,
-                "total": data.get("total_count", 0),
+                "total": total,
                 "count": len(items),
+                "page": page,
+                "per_page": per_page,
+                "has_more": page * per_page < total,
                 "items": items,
             }
     except httpx.HTTPStatusError as e:
@@ -370,6 +378,82 @@ def search_code(
     except Exception as e:
         logger.error("GitHub code search failed: %s", e)
         raise HTTPException(status_code=500, detail="GitHub code search failed")
+
+
+@router.get("/repos")
+def get_repos():
+    """Return distinct repos from synced GitHub PRs."""
+    with get_db_connection(readonly=True) as db:
+        rows = db.execute(
+            "SELECT DISTINCT repo FROM github_pull_requests WHERE repo IS NOT NULL AND repo != '' ORDER BY repo"
+        ).fetchall()
+    return {"repos": [{"full_name": r["repo"], "html_url": f"https://github.com/{r['repo']}"} for r in rows]}
+
+
+@router.get("/file")
+def get_file(
+    repo: str = Query(..., description="Repository as owner/repo (e.g. richwhitjr/dashboard)"),
+    path: str = Query(..., description="File path in repo (e.g. app/backend/main.py)"),
+    ref: str = Query("main", description="Branch or commit ref"),
+    start_line: Optional[int] = Query(None, ge=1, description="Start line, 1-based"),
+    end_line: Optional[int] = Query(None, ge=1, description="End line, 1-based"),
+):
+    """Fetch a file from a GitHub repo, optionally sliced to a line range."""
+    headers = _get_headers()
+
+    try:
+        with httpx.Client(timeout=30) as client:
+            resp = client.get(
+                f"{GITHUB_API_BASE}/repos/{repo}/contents/{path}",
+                headers=headers,
+                params={"ref": ref},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            raise HTTPException(status_code=404, detail=f"File '{path}' not found in {repo}@{ref}")
+        logger.error("GitHub file fetch error: %s", e.response.text[:500])
+        raise HTTPException(status_code=e.response.status_code, detail="GitHub API error")
+    except Exception as e:
+        logger.error("GitHub file fetch failed: %s", e)
+        raise HTTPException(status_code=500, detail="GitHub file fetch failed")
+
+    if data.get("type") != "file":
+        raise HTTPException(status_code=400, detail=f"'{path}' is not a file (type: {data.get('type', 'unknown')})")
+
+    raw = base64.b64decode(data["content"].replace("\n", "")).decode("utf-8", errors="replace")
+    all_lines = raw.splitlines()
+    total_lines = len(all_lines)
+
+    s = max(1, start_line or 1)
+    e = min(total_lines, end_line or total_lines)
+    sliced = all_lines[s - 1 : e]
+    shown = f"{s}-{e}"
+
+    # Prefix each line with its line number for clarity (used by agent/Claude)
+    numbered = "\n".join(f"{s + i:4d} | {line}" for i, line in enumerate(sliced))
+    if len(numbered) > 8000:
+        numbered = numbered[:8000] + "\n... (truncated)"
+
+    # Raw lines for syntax highlighting in the UI (no line-number prefix)
+    raw_lines = list(sliced)
+
+    line_anchor = f"#L{s}-L{e}" if (start_line or end_line) else ""
+    html_url = data.get("html_url", f"https://github.com/{repo}/blob/{ref}/{path}") + line_anchor
+
+    return {
+        "repo": repo,
+        "path": path,
+        "ref": ref,
+        "html_url": html_url,
+        "blame_url": f"https://github.com/{repo}/blame/{ref}/{path}",
+        "content": numbered,
+        "raw_lines": raw_lines,
+        "line_start": s,
+        "total_lines": total_lines,
+        "shown_lines": shown,
+    }
 
 
 # ---------------------------------------------------------------------------

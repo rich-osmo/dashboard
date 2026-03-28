@@ -325,6 +325,7 @@ export interface GitHubSearchResult {
 export interface GitHubCodeSearchResult {
   name: string;
   path: string;
+  repo: string;
   html_url: string;
   text_matches?: { fragment: string }[];
 }

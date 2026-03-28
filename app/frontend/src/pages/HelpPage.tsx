@@ -120,6 +120,20 @@ export function HelpPage() {
       </section>
 
       <section className="help-section">
+        <h2>&ldquo;Where is that code?&rdquo;</h2>
+        <p>
+          Code Search scans across your GitHub repositories and shows results as
+          file cards with match fragments. Open any file in a full-file modal, or
+          jump straight to GitHub. Also available inside <kbd>&#x2318;K</kbd> with
+          <kbd>&#x2318;/</kbd> to toggle code results inline alongside your regular
+          search. The agent and Claude Code can both search code and run git blame.
+        </p>
+        <div className="help-keys">
+          <kbd>g</kbd> <kbd>q</kbd> Code Search &middot; <kbd>&#x2318;/</kbd> in search overlay
+        </div>
+      </section>
+
+      <section className="help-section">
         <h2>&ldquo;What&rsquo;s in my Drive?&rdquo;</h2>
         <p>
           Browse recent Google Drive files with AI-powered relevance ranking.

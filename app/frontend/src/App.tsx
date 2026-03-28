@@ -40,6 +40,7 @@ const ObsidianPage = lazy(() => import('./pages/ObsidianPage').then(m => ({ defa
 const PeoplePage = lazy(() => import('./pages/PeoplePage').then(m => ({ default: m.PeoplePage })));
 const AgentPage = lazy(() => import('./pages/AgentPage').then(m => ({ default: m.AgentPage })));
 const SandboxPage = lazy(() => import('./pages/SandboxPage').then(m => ({ default: m.SandboxPage })));
+const CodeSearchPage = lazy(() => import('./pages/CodeSearchPage').then(m => ({ default: m.CodeSearchPage })));
 
 
 const queryClient = new QueryClient({
@@ -171,6 +172,7 @@ function AppContent() {
               <Route path="/personas" element={<Navigate to="/claude" replace />} />
 
               <Route path="/agent" element={<AgentPage />} />
+              <Route path="/code-search" element={<CodeSearchPage />} />
               <Route path="/sandbox" element={<SandboxPage />} />
               <Route path="/claude" element={null} />
             </Routes>

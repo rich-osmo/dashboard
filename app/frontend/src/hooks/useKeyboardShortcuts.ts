@@ -19,6 +19,7 @@ export const SHORTCUT_DEFINITIONS: ShortcutDef[] = [
   { keys: 'g w', description: 'Go to News', category: 'navigation' },
   { keys: 'g p', description: 'Go to People', category: 'navigation' },
   { keys: 'g h', description: 'Go to GitHub', category: 'navigation' },
+  { keys: 'g q', description: 'Go to Code Search', category: 'navigation' },
   { keys: 'g c', description: 'Go to Claude', category: 'navigation' },
   { keys: 'g e', description: 'Go to Email', category: 'navigation' },
   { keys: 'g k', description: 'Go to Slack', category: 'navigation' },
@@ -68,6 +69,7 @@ export const SHORTCUT_DEFINITIONS: ShortcutDef[] = [
   { keys: '\u2318K', description: 'Search / command palette', category: 'overlays' },
   { keys: 'Tab (in \u2318K)', description: 'Quick create (issue/thought)', category: 'overlays' },
   { keys: '\u2318E (in \u2318K)', description: 'Toggle external search', category: 'overlays' },
+  { keys: '\u2318/ (in \u2318K)', description: 'Toggle code search', category: 'overlays' },
   { keys: '?', description: 'Keyboard shortcuts help', category: 'overlays' },
   { keys: 'Escape', description: 'Close overlay', category: 'overlays' },
 ];
@@ -82,6 +84,7 @@ const GO_ROUTES: Record<string, string> = {
   w: '/news',
   p: '/people',
   h: '/github',
+  q: '/code-search',
   c: '/claude',
   e: '/email',
   k: '/slack',

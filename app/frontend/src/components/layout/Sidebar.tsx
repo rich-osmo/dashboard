@@ -160,6 +160,7 @@ export function Sidebar() {
         <div className="sidebar-section-label">tools</div>
         <nav>
           <NavLink to="/people">People</NavLink>
+          {active.has('github') && <NavLink to="/code-search">Code Search</NavLink>}
           {(active.has('gemini') || active.has('anthropic') || active.has('openai')) && (
             <NavLink to="/agent">Agent</NavLink>
           )}

@@ -1053,12 +1053,12 @@ export function useGitHubSearch(query: string, type?: string) {
   });
 }
 
-export function useGitHubCodeSearch(query: string) {
+export function useGitHubCodeSearch(query: string, page = 1) {
   return useQuery({
-    queryKey: ['github-code-search', query],
+    queryKey: ['github-code-search', query, page],
     queryFn: () =>
-      api.get<{ query: string; total: number; count: number; items: GitHubCodeSearchResult[] }>(
-        `/github/search/code?q=${encodeURIComponent(query)}`
+      api.get<{ query: string; total: number; count: number; page: number; per_page: number; has_more: boolean; items: GitHubCodeSearchResult[] }>(
+        `/github/search/code?q=${encodeURIComponent(query)}&page=${page}`
       ),
     enabled: query.length > 0,
     staleTime: 30_000,
